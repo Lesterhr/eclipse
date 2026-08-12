@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Finsternis-Messung</title>
+    <meta name="description" content="Misst die Sonnenfinsternis mit der Handykamera und legt die eigene Lichtkurve über die berechnete Vorhersage." />
+    <meta name="theme-color" content="#0d1117" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Finsternis-Messung</h1>
+        <div id="status" class="status">wird geladen …</div>
+      </header>
+
+      <div id="resume-bar" class="resume" hidden>
+        <span id="resume-text"></span>
+        <button id="btn-resume" class="small">fortsetzen</button>
+        <button id="btn-discard" class="small ghost">verwerfen</button>
+      </div>
+
+      <section class="hero">
+        <div id="big-label" class="big-label">Standort wird bestimmt</div>
+        <div id="big-value" class="big-value">—</div>
+        <div id="sub-stats" class="stats"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Lichtkurve</h2>
+          <button id="btn-mode" class="small ghost">Helligkeit</button>
+        </div>
+        <canvas id="chart" height="260"></canvas>
+        <div class="legend">
+          <span class="dot measured"></span> gemessen
+          <span class="dot model"></span> berechnet
+        </div>
+        <div id="measure-readout" class="stats"></div>
+        <div id="meter-status" class="meter-status"></div>
+      </section>
+
+      <section class="controls">
+        <button id="btn-measure" class="primary">Messung starten</button>
+        <div class="control-row">
+          <label>
+            Takt
+            <select id="interval">
+              <option value="2">2 s</option>
+              <option value="5" selected>5 s</option>
+              <option value="10">10 s</option>
+              <option value="30">30 s</option>
+            </select>
+          </label>
+          <label>
+            Kamera
+            <select id="camera-select">
+              <option value="user" selected>vorne (Display nach oben)</option>
+              <option value="environment">hinten</option>
+            </select>
+          </label>
+        </div>
+        <div class="control-row">
+          <button id="btn-sound" class="ghost">Ton</button>
+          <button id="btn-night" class="ghost">Nachtmodus</button>
+          <button id="btn-mark" class="ghost">Notiz</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Vorhersage für deinen Standort</h2></div>
+        <div id="eclipse-info" class="info"></div>
+        <div class="site-line">
+          <span id="site-info" class="muted"></span>
+          <button id="btn-manual-site" class="small ghost">ändern</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Ergebnis mitnehmen</h2></div>
+        <div class="control-row">
+          <button id="btn-share" class="ghost">Bild teilen</button>
+          <button id="btn-csv" class="ghost">CSV</button>
+          <button id="btn-json" class="ghost">JSON</button>
+        </div>
+      </section>
+
+      <details class="card howto">
+        <summary>So misst du sauber</summary>
+        <ol>
+          <li>Handy <strong>flach hinlegen, Display nach oben</strong>, freier Blick zum Himmel. Nicht auf die Sonne richten, nicht in den Schatten legen.</li>
+          <li>Vor dem ersten Kontakt starten. Die App braucht ein Stück unbedeckte Kurve, um die Messung auf die Rechnung zu skalieren.</li>
+          <li>Ab jetzt <strong>nichts mehr bewegen</strong>. Jede Lageänderung ist ein Sprung in den Daten.</li>
+          <li>Automatische Helligkeit und Nachtmodus am Handy ausschalten, Bildschirm auf feste Helligkeit.</li>
+          <li>Zieht eine Wolke durch, drück auf Notiz. Dann weißt du später, welcher Knick von wem stammt.</li>
+        </ol>
+        <p class="muted">
+          Nie mit bloßem Auge in die Sonne sehen, auch nicht kurz, auch nicht bei 90 % Bedeckung.
+          Für den Blick nach oben braucht es eine Finsternisbrille.
+        </p>
+      </details>
+
+      <footer>
+        <span class="muted">
+          Positionen nach Meeus, <em>Astronomical Algorithms</em>. Randverdunklung quadratisch,
+          Helligkeitsmodell genähert — die Kurvenform stimmt, die absolute Skala ist gefittet.
+        </span>
+      </footer>
+    </main>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

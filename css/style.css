@@ -1,0 +1,364 @@
+/* Dunkel als Grundzustand: die App wird abends draußen benutzt, hell blendet. */
+
+:root {
+  --bg: #0d1117;
+  --card: #151b23;
+  --line: #232b36;
+  --text: #e6edf3;
+  --muted: #8b98a8;
+  --accent: #ffcc55;
+  --model: #5a8ec4;
+  --warn: #ff8a5a;
+}
+
+body.night {
+  --bg: #0a0000;
+  --card: #140505;
+  --line: #3a1010;
+  --text: #ff8080;
+  --muted: #a04040;
+  --accent: #ff5a5a;
+  --model: #8a2020;
+  --warn: #ff4040;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+body.night {
+  /* Rotfilter schont die Dunkeladaption der Augen */
+  filter: saturate(0.9);
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) 16px calc(28px + env(safe-area-inset-bottom));
+}
+
+header {
+  padding: 20px 0 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--warn);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Kopfbereich mit der einen großen Zahl */
+
+.hero {
+  padding: 18px 0 22px;
+  text-align: center;
+}
+
+.big-label {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.big-value {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.stats > div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.stats .k {
+  color: var(--muted);
+}
+
+.stats .v {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.stats .full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Karten */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+#chart {
+  width: 100%;
+  height: 260px;
+  display: block;
+  border-radius: 8px;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.legend .dot {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend .dot.measured {
+  background: var(--accent);
+}
+
+.legend .dot.model {
+  background: var(--model);
+  margin-left: 12px;
+}
+
+.meter-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.meter-status.warn,
+.warn {
+  color: var(--warn);
+}
+
+/* Bedienung */
+
+.controls {
+  margin-bottom: 14px;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button.primary {
+  width: 100%;
+  padding: 15px;
+  font-size: 17px;
+  background: var(--accent);
+  color: #10131a;
+  border-color: transparent;
+}
+
+button.primary.active {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+button.ghost.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.small {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.control-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.control-row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.control-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+select {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+/* Vorhersage-Tabelle */
+
+.info .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.info .row:last-child {
+  border-bottom: 0;
+}
+
+.info .k {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.info .v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.notice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.site-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* Fortsetzen-Leiste */
+
+.resume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.resume span {
+  flex: 1;
+}
+
+/* Anleitung */
+
+.howto summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.howto ol {
+  margin: 12px 0;
+  padding-left: 20px;
+}
+
+.howto li {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+footer {
+  padding: 8px 0 20px;
+  font-size: 12px;
+  text-align: center;
+}

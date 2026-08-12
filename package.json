@@ -1,0 +1,13 @@
+{
+  "name": "finsternis-messung",
+  "version": "1.0.0",
+  "description": "PWA, die eine Sonnenfinsternis mit der Handykamera misst und die eigene Lichtkurve gegen die berechnete Vorhersage legt",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "test": "node test/astro.test.mjs && node test/eclipse.test.mjs && node test/wiring.test.mjs"
+  },
+  "license": "MIT"
+}
