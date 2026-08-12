@@ -5,7 +5,7 @@
  * Die Rechnung läuft ohnehin lokal, es gibt keine Server-Abhängigkeit.
  */
 
-const CACHE = 'eclipse-v3';
+const CACHE = 'eclipse-v4';
 const ASSETS = [
   './',
   './index.html',

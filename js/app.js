@@ -346,11 +346,26 @@ function sunsetAzimuth() {
   return e?.visible && e.sunset ? modelAt(e.sunset, state.site).sunAz : null;
 }
 
+/**
+ * Der Verlauf für das Band im Sucher. Dieselben Modellpunkte wie die Rose, dazu die
+ * Marken, an denen sich der Abend entscheidet: Maximum und Sonnenuntergang.
+ */
+function courseInfo() {
+  const e = state.eclipse;
+  if (!e?.visible || state.path.length < 2) return null;
+  return {
+    path: state.path,
+    maxTime: e.maxTime,
+    sunset: e.setsDuringEclipse ? e.sunset : null,
+    endsVisible: e.endsVisible,
+  };
+}
+
 function renderAim(m) {
   const frame = compassFrame();
   const sunsetAz = sunsetAzimuth();
 
-  state.aim.draw({ model: m, frame, sunsetAz });
+  state.aim.draw({ model: m, frame, sunsetAz, course: courseInfo() });
   state.rose.draw({
     sunAz: m.sunAz,
     sunAlt: m.sunAlt,

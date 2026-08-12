@@ -30,6 +30,8 @@ function expect(cond, name, detail) {
 /* ---------- Attrappen ---------- */
 
 const badCoords = [];
+/** Alles, was auf irgendeine Leinwand geschrieben wurde — so lässt sich prüfen, dass ein Bild wirklich ankommt */
+const drawnText = [];
 let drawCalls = 0;
 
 function stubContext() {
@@ -45,6 +47,7 @@ function stubContext() {
         if (prop === 'canvas') return {};
         return (...args) => {
           drawCalls++;
+          if (prop === 'fillText' && typeof args[0] === 'string') drawnText.push(args[0]);
           for (const a of args) {
             if (typeof a === 'number' && !Number.isFinite(a)) {
               badCoords.push(`${String(prop)}(${args.join(', ')})`);
@@ -315,6 +318,14 @@ console.log('\nPeilen');
     elements.get('rose-note').textContent.length > 10,
     'der Zustand des Sensors steht dabei',
     elements.get('rose-note').textContent
+  );
+  expect(
+    drawnText.some((t) => t.includes('Verlauf der Verdunkelung')),
+    'das Verlaufsband wird in den Sucher gezeichnet'
+  );
+  expect(
+    drawnText.some((t) => t.includes('max ')),
+    'mit dem Stand und dem Höchstwert daneben'
   );
 }
 

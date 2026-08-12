@@ -18,6 +18,8 @@ import {
   orientationFrame,
   projectToScreen,
   fistHint,
+  courseBand,
+  spreadLabels,
 } from '../js/compass.js';
 
 let passed = 0;
@@ -154,6 +156,75 @@ console.log('\nHöhe in Fäusten');
   expect(fistHint(1).includes('Finger'), 'ganz tief in Fingerbreiten');
   expect(fistHint(9).includes('eine Faust'), 'knapp zehn Grad sind eine Faust');
   expect(fistHint(25).includes('2,5'), 'darüber wird gezählt');
+}
+
+console.log('\nVerlaufsband');
+{
+  const box = { x: 10, y: 100, w: 200, h: 40 };
+  // Dreieck: leer, halb, voll bei 0.6, wieder leer — wie eine partielle Finsternis
+  const path = [
+    { t: 1000, obscuration: 0 },
+    { t: 2000, obscuration: 0.3 },
+    { t: 3000, obscuration: 0.6 },
+    { t: 4000, obscuration: 0.3 },
+    { t: 5000, obscuration: 0 },
+  ];
+  const b = courseBand(path, box, 3000);
+
+  expect(courseBand([], box, 0) === null, 'ohne Punkte kein Band');
+  expect(courseBand([path[0]], box, 0) === null, 'ein einzelner Punkt reicht nicht');
+
+  near(b.points[0].x, 10, 1e-9, 'der erste Punkt sitzt am linken Rand');
+  near(b.points[4].x, 210, 1e-9, 'der letzte am rechten');
+  near(b.points[2].x, 110, 1e-9, 'die Mitte der Zeit liegt in der Mitte der Fläche');
+
+  // Die Skala geht bis zum Maximum dieser Finsternis, nicht bis 100 %
+  near(b.scale, 0.6, 1e-9, 'Skalenmaximum ist der Höchststand der Kurve');
+  near(b.points[0].y, 140, 1e-9, 'unbedeckt liegt auf der Grundlinie');
+  near(b.points[2].y, 100, 1e-9, 'das Maximum füllt das Band ganz aus');
+  near(b.points[1].y, 120, 1e-9, 'die Hälfte davon auf halber Höhe');
+
+  expect(b.now.inside, 'ein Zeitpunkt im Verlauf gilt als innen');
+  near(b.now.x, 110, 1e-9, 'und steht an seiner Stelle');
+
+  // Außerhalb: die Marke bleibt am Rand kleben, statt aus dem Bild zu laufen
+  const vorher = courseBand(path, box, 0);
+  expect(!vorher.now.inside, 'vor dem Beginn gilt der Zeitpunkt als außen');
+  near(vorher.now.x, 10, 1e-9, 'und wird auf den linken Rand geklemmt');
+  near(courseBand(path, box, 9999).now.x, 210, 1e-9, 'nach dem Ende auf den rechten');
+  expect(courseBand(path, box, null).now === null, 'ohne Zeitpunkt keine Marke');
+
+  // Eine ganz schwache Finsternis darf nicht auf volle Höhe hochgezogen werden
+  const schwach = courseBand(
+    [{ t: 0, obscuration: 0 }, { t: 10, obscuration: 0.01 }],
+    box,
+    10
+  );
+  near(schwach.scale, 0.05, 1e-9, 'unter 5 % bleibt die Skala stehen');
+  expect(schwach.points[1].y > box.y + box.h * 0.5, 'die Kurve bleibt dann flach unten');
+}
+
+console.log('\nBeschriftungen auseinanderhalten');
+{
+  // Genau der Fall dieses Abends: Maximum und Sonnenuntergang liegen Minuten auseinander
+  const eng = spreadLabels([{ x: 200 }, { x: 213 }], 30, 20, 380);
+  expect(eng[1].labelX - eng[0].labelX >= 30, 'zu dichte Beschriftungen rücken auseinander');
+  near(eng[0].labelX, 200, 1e-9, 'die linke bleibt an ihrem Strich');
+
+  const weit = spreadLabels([{ x: 100 }, { x: 300 }], 30, 20, 380);
+  near(weit[0].labelX, 100, 1e-9, 'genug Platz, dann rührt sich nichts');
+  near(weit[1].labelX, 300, 1e-9, 'auch rechts nicht');
+
+  const rand = spreadLabels([{ x: 370 }, { x: 375 }], 30, 20, 380);
+  expect(rand[1].labelX <= 380, 'am rechten Rand bleibt die letzte im Rahmen');
+  expect(rand[1].labelX - rand[0].labelX >= 30 - 1e-9, 'und der Abstand hält trotzdem');
+  expect(rand[0].labelX >= 20, 'die zurückgeschobene bleibt links im Rahmen');
+
+  // Reihenfolge darf nicht von der Eingabereihenfolge abhängen
+  const verdreht = spreadLabels([{ x: 213, text: 'b' }, { x: 200, text: 'a' }], 30, 20, 380);
+  expect(verdreht[0].text === 'a', 'sortiert wird nach der Lage, nicht nach der Eingabe');
+
+  expect(spreadLabels([], 30, 20, 380).length === 0, 'nichts zu beschriften geht auch');
 }
 
 console.log('\nEinheitsvektoren');

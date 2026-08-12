@@ -25,6 +25,10 @@ const RAD = 180 / Math.PI;
 
 const norm360 = (x) => ((x % 360) + 360) % 360;
 
+/** Uhrzeit ohne Sekunden, für die Beschriftung des Verlaufsbands */
+const clockLabel = (ms) =>
+  new Date(ms).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
 /** Kürzester Weg von a nach b in Grad, negativ = nach links */
 export function deltaAngle(a, b) {
   return ((b - a + 540) % 360) - 180;
@@ -289,6 +293,8 @@ export class AimView extends CanvasView {
   constructor(canvas) {
     super(canvas, 300);
     this.fovDeg = 60;
+    /** Höhe des Verlaufsbands am unteren Rand, 0 wenn keins gezeichnet wird */
+    this.bandH = 64;
   }
 
   /**
@@ -296,8 +302,9 @@ export class AimView extends CanvasView {
    * @param {object} o.model aktueller Modellzustand (modelAt)
    * @param {object|null} o.frame Lage des Geräts, null wenn kein Kompass läuft
    * @param {number} [o.sunsetAz] Azimut des Untergangspunkts
+   * @param {object|null} [o.course] Verlauf der Bedeckung: {path, maxTime, sunset, endsVisible}
    */
-  draw({ model, frame, sunsetAz = null }) {
+  draw({ model, frame, sunsetAz = null, course = null }) {
     const { ctx, w, h } = this;
     ctx.clearRect(0, 0, w, h);
     if (!model) return;
@@ -311,6 +318,7 @@ export class AimView extends CanvasView {
 
     if (!frame) {
       this._message('Kompass ist aus', 'Oben einschalten, dann zeigt dieses Bild, wohin du hältst.');
+      this._course(course, model);
       return;
     }
     if (frame.flat) {
@@ -319,6 +327,7 @@ export class AimView extends CanvasView {
         'Aufstellen und wie eine Kamera zum Himmel halten, dann sitzt die Sonne im Bild.'
       );
       this._crosshair();
+      this._course(course, model);
       return;
     }
 
@@ -387,6 +396,139 @@ export class AimView extends CanvasView {
       12,
       10
     );
+
+    this._course(course, model);
+  }
+
+  /**
+   * Das Verlaufsband am unteren Rand: die ganze Finsternis auf einen Blick, mit dem
+   * eigenen Standpunkt darin. Beim Peilen steht man im Feld und will beides zugleich
+   * wissen — wohin halten, und wie weit es schon ist.
+   *
+   * Nach dem Sonnenuntergang läuft die Finsternis weiter, ohne dass man noch etwas
+   * sieht. Dieser Teil wird deshalb abgesetzt gezeichnet, sonst wartet man auf einen
+   * letzten Kontakt, der nie kommt.
+   */
+  _course(course, model) {
+    const path = course?.path;
+    if (!path || path.length < 2) return;
+    const { ctx, w, h } = this;
+    const H = this.bandH;
+    const bx = 10;
+    const by = h - H - 8;
+    const bw = w - 20;
+    if (bw < 80 || by < 40) return;
+
+    // Rahmen
+    ctx.save();
+    ctx.fillStyle = 'rgba(6, 9, 14, 0.62)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    this._roundRect(bx, by, bw, H, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    const plot = { x: bx + 10, y: by + 17, w: bw - 20, h: H - 33 };
+    const band = courseBand(path, plot, model?.t ?? null);
+    if (!band) return;
+    const visibleEnd = course.endsVisible ?? course.sunset ?? band.t1;
+
+    // Fläche unter der Kurve, bis zum Sonnenuntergang kräftig, danach nur angedeutet
+    const area = (from, to, fill, stroke) => {
+      const pts = band.points.filter((p) => p.t >= from && p.t <= to);
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, plot.y + plot.h);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.lineTo(pts[pts.length - 1].x, plot.y + plot.h);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    };
+    area(band.t0, visibleEnd, 'rgba(255, 200, 110, 0.28)', 'rgba(255, 214, 130, 0.9)');
+    area(visibleEnd, band.t1, 'rgba(255, 200, 110, 0.07)', 'rgba(255, 214, 130, 0.28)');
+
+    // Marken: Maximum, und der Untergang, falls die Sonne mitten drin verschwindet
+    const marks = [{ t: course.maxTime, color: 'rgba(255,255,255,0.4)', text: 'Max' }];
+    if (course.sunset != null && course.sunset < band.t1) {
+      marks.push({ t: course.sunset, color: 'rgba(255, 140, 80, 0.8)', text: 'unter' });
+    }
+    const shown = marks.filter((m) => m.t != null && m.t > band.t0 && m.t < band.t1);
+    for (const m of shown) {
+      m.x = band.xOf(m.t);
+      ctx.strokeStyle = m.color;
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(m.x, plot.y - 2);
+      ctx.lineTo(m.x, plot.y + plot.h);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // An diesem Abend liegen Maximum und Untergang nur Minuten auseinander. Die Striche
+    // dürfen dicht stehen, die Beschriftungen nicht — sonst liest man Buchstabensalat.
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const m of spreadLabels(shown, 30, plot.x + 24, plot.x + plot.w - 24)) {
+      ctx.fillStyle = m.color;
+      ctx.fillText(m.text, m.labelX, plot.y + plot.h + 3);
+    }
+
+    // Kopfzeile
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('Verlauf der Verdunkelung', bx + 10, by + 4);
+    if (model) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255, 226, 170, 0.95)';
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillText(`${(model.obscuration * 100).toFixed(0)} % · max ${(band.scale * 100).toFixed(0)} %`, bx + bw - 10, by + 3);
+    }
+
+    // Zeiten an den Enden
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'left';
+    ctx.fillText(clockLabel(band.t0), bx + 10, plot.y + plot.h + 3);
+    ctx.textAlign = 'right';
+    ctx.fillText(clockLabel(band.t1), bx + bw - 10, plot.y + plot.h + 3);
+
+    // Jetzt: Linie durchs Band, darauf die Sonne mit ihrem Mondbiss
+    if (band.now && model) {
+      const x = band.now.x;
+      ctx.strokeStyle = band.now.inside ? 'rgba(127, 212, 255, 0.9)' : 'rgba(127, 212, 255, 0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x, plot.y - 3);
+      ctx.lineTo(x, plot.y + plot.h + 1);
+      ctx.stroke();
+      if (band.now.inside) drawEclipsedSun(ctx, model, x, band.yOf(model.obscuration), 6, 1);
+    }
+  }
+
+  _roundRect(x, y, w, h, r) {
+    const { ctx } = this;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   /** Der Horizont ist ein Großkreis und wird in dieser Projektion zur Geraden */
@@ -503,7 +645,9 @@ export class AimView extends CanvasView {
     ctx.font = '600 14px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(teile.join(', ') || 'fast drauf', cx, cy + Math.min(h, 200) * 0.42);
+    // Über dem Verlaufsband bleiben, sonst steht die Ansage halb darunter
+    const ty = Math.min(cy + Math.min(h, 200) * 0.42, h - this.bandH - 22);
+    ctx.fillText(teile.join(', ') || 'fast drauf', cx, ty);
   }
 
   _message(title, sub) {
@@ -646,6 +790,73 @@ export class RoseView extends CanvasView {
       ctx.fillText(`du: ${compass(facing)} ${Math.round(facing)}°`, cx, cy + 10);
     }
   }
+}
+
+/* ------------------------- Verlauf der Bedeckung ------------------------- */
+
+/**
+ * Rechnet die Bedeckungskurve in Bildkoordinaten um — das Band, das im Sucher unten
+ * mitläuft. Getrennt vom Zeichnen, damit sich die Zuordnung Zeit → Bildpunkt ohne
+ * Browser prüfen lässt.
+ *
+ * Die senkrechte Skala geht bis zum Maximum dieser Finsternis, nicht bis 100 %.
+ * Sonst kröche die Kurve bei einer partiellen Finsternis als flacher Strich am
+ * unteren Rand entlang, und man sähe genau das nicht, worum es geht: die Bewegung.
+ *
+ * @param {Array<{t:number, obscuration:number}>} path Modellpunkte, zeitlich aufsteigend
+ * @param {{x:number, y:number, w:number, h:number}} box Zeichenfläche der Kurve
+ * @param {number|null} tNow Zeitpunkt der Anzeige
+ * @returns {{t0:number, t1:number, scale:number, xOf:Function, yOf:Function,
+ *            points:Array<{x:number,y:number,t:number}>,
+ *            now:{x:number, inside:boolean}|null}|null} null, wenn nichts zu zeichnen ist
+ */
+export function courseBand(path, box, tNow = null) {
+  if (!Array.isArray(path) || path.length < 2) return null;
+  const t0 = path[0].t;
+  const t1 = path[path.length - 1].t;
+  if (!(t1 > t0) || !(box.w > 0) || !(box.h > 0)) return null;
+
+  let peak = 0;
+  for (const p of path) peak = Math.max(peak, p.obscuration || 0);
+  const scale = Math.max(peak, 0.05);
+
+  const xOf = (t) => box.x + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * box.w;
+  const yOf = (o) => box.y + box.h - (Math.min(scale, Math.max(0, o)) / scale) * box.h;
+
+  return {
+    t0,
+    t1,
+    scale,
+    xOf,
+    yOf,
+    points: path.map((p) => ({ x: xOf(p.t), y: yOf(p.obscuration), t: p.t })),
+    now: tNow == null ? null : { x: xOf(tNow), inside: tNow >= t0 && tNow <= t1 },
+  };
+}
+
+/**
+ * Schiebt Beschriftungen so weit auseinander, dass sie sich nicht überlagern, und hält
+ * sie im Rahmen. Der Strich bleibt an seiner Stelle, nur die Schrift rückt.
+ *
+ * @param {Array<{x:number}>} marks nach x aufsteigend oder beliebig
+ * @param {number} gap Mindestabstand in Pixeln
+ * @param {number} min linker Rand
+ * @param {number} max rechter Rand
+ * @returns {Array} dieselben Objekte, um labelX ergänzt
+ */
+export function spreadLabels(marks, gap, min, max) {
+  const sorted = [...marks].sort((a, b) => a.x - b.x);
+  let last = -Infinity;
+  for (const m of sorted) {
+    m.labelX = Math.max(Math.min(Math.max(m.x, min), max), last + gap);
+    last = m.labelX;
+  }
+  // Läuft die Reihe rechts hinaus, alles um den Überstand zurückschieben
+  const over = sorted.length ? sorted[sorted.length - 1].labelX - max : 0;
+  if (over > 0) {
+    for (const m of sorted) m.labelX -= over;
+  }
+  return sorted;
 }
 
 /** Höhenangabe, wie man sie im Gelände nachmessen kann */

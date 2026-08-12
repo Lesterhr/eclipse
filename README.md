@@ -9,7 +9,8 @@ Eine Web-App für den Abend einer Sonnenfinsternis, in vier Teilen:
   Untergang. Ein Zeitschieber geht den ganzen Verlauf durch, vorher wie nachher.
 - **Peilen** koppelt die Rechnung an den Lagesensor des Handys. Man hebt es wie eine Kamera,
   und die Sonne sitzt im Sucherbild dort, wo sie am Himmel steht — mit Horizont, Höhenmarken
-  und dem Untergangspunkt. Daneben eine Rose, die sich mitdreht: oben ist die eigene
+  und dem Untergangspunkt. Unten im Bild läuft der Verlauf der Verdunkelung mit, damit man
+  beim Zielen sieht, wie weit die Finsternis ist. Daneben eine Rose, die sich mitdreht: oben ist die eigene
   Blickrichtung.
 - **Messen** protokolliert mit der Handykamera die Umgebungshelligkeit. Während die Sonne
   verschwindet, fällt die eigene Messkurve auf die vorher berechnete Vorhersage. Am Ende
@@ -120,6 +121,15 @@ das, was man beim Blick über das Handy hinweg auch wirklich sieht. In dieser Pr
 der Horizont als Großkreis zur Geraden, er lässt sich also aus zwei Punkten ziehen. Die
 Sonnenscheibe ist bewusst übertrieben groß gezeichnet; der dünne Ring um sie hat 5° Halbmesser
 und gibt den Maßstab zurück.
+
+Unten im Sucher läuft das Verlaufsband mit: die Bedeckung über die Zeit, vom ersten Kontakt bis
+zum letzten, mit dem Maximum und dem Sonnenuntergang als Marken und der aktuellen Stelle als
+blauer Linie. Wer im Feld steht, will beides zugleich wissen — wohin halten, und wie weit es
+schon ist. Die senkrechte Skala geht bis zum Höchststand dieser Finsternis statt bis 100 %,
+sonst kröche die Kurve bei einer partiellen Finsternis als flacher Strich am Boden entlang.
+Der Teil nach dem Sonnenuntergang ist blass gezeichnet: dort läuft die Finsternis weiter, ohne
+dass noch etwas zu sehen wäre. Die Umrechnung Zeit → Bildpunkt steckt in `courseBand` und ist
+vom Zeichnen getrennt, damit sie ohne Browser prüfbar bleibt.
 
 Die Nordrichtung kommt auf drei Wegen, die die Browser unterschiedlich anbieten:
 `webkitCompassHeading` (iOS, rechtweisend Nord, nur nach ausdrücklicher Erlaubnis aus einer
