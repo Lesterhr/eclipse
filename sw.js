@@ -5,7 +5,7 @@
  * Die Rechnung läuft ohnehin lokal, es gibt keine Server-Abhängigkeit.
  */
 
-const CACHE = 'eclipse-v1';
+const CACHE = 'eclipse-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,8 @@ const ASSETS = [
   './js/meter.js',
   './js/chart.js',
   './js/store.js',
+  './js/sky.js',
+  './js/photo.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

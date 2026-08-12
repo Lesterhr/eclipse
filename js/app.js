@@ -1,11 +1,13 @@
 /**
- * app.js — verdrahtet Messung, Rechnung und Anzeige.
+ * app.js — verdrahtet Rechnung, Bild, Messung und Kameraberatung.
  */
 
-import { nextEclipse, findEclipse, predictCurve, modelAt, fitScale } from './eclipse.js';
+import { nextEclipse, predictCurve, modelAt, fitScale, timeline, horizonDip, sunset } from './eclipse.js';
 import { LightMeter, AmbientSensor, Sonifier } from './meter.js';
 import { Session, download } from './store.js';
 import { Chart, renderShareCard } from './chart.js';
+import { SunView, HorizonView, compass } from './sky.js';
+import { SENSORS, sunSize, maxShutter, shootingAdvice, shutterLabel } from './photo.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtTime = (ms) =>
@@ -23,27 +25,37 @@ function fmtCountdown(deltaMs) {
     : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+const PRESETS = [
+  { name: 'Buchbergwarte (Wienerwald)', lat: 48.2142, lon: 15.9456, height: 488, aboveTerrain: 170 },
+];
+
 const state = {
   site: null,
   eclipse: null,
   model: [],
+  path: [],
+  plan: [],
+  dipGainMs: 0,
   session: null,
   scale: 1,
   measuring: false,
   intervalSec: 5,
   chart: null,
+  sun: null,
+  horizon: null,
   meter: new LightMeter(),
   ambient: new AmbientSensor(),
   sonifier: new Sonifier(),
   wakeLock: null,
   lastReading: null,
   timer: null,
+  /** null = der Anzeige liegt die echte Uhrzeit zugrunde, sonst der Zeitpunkt am Schieber */
+  scrubT: null,
 };
 
 /* ---------- Standort ---------- */
 
 async function locate() {
-  setStatus('Standort wird bestimmt …');
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
@@ -54,8 +66,9 @@ async function locate() {
         resolve({
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
-          height: pos.coords.altitude || 0,
-          accuracy: pos.coords.accuracy,
+          height: Math.round(pos.coords.altitude || 0),
+          aboveTerrain: 0,
+          name: 'GPS-Standort',
         }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 600000 }
@@ -80,15 +93,23 @@ function saveSite(site) {
   }
 }
 
+function setSite(site) {
+  state.site = { aboveTerrain: 0, height: 0, ...site };
+  saveSite(state.site);
+  computePrediction();
+  renderSiteChip();
+}
+
+function renderSiteChip() {
+  const s = state.site;
+  $('site-name').textContent = s.name || `${s.lat.toFixed(3)}°, ${s.lon.toFixed(3)}°`;
+}
+
 /* ---------- Vorhersage ---------- */
 
 function computePrediction() {
-  const now = Date.now();
   setStatus('Finsternis wird berechnet …');
-  let e = nextEclipse(state.site, now - 4 * 3600000, 400);
-  if (!e.visible) {
-    e = { visible: false, site: state.site };
-  }
+  const e = nextEclipse(state.site, Date.now() - 4 * 3600000, 400);
   state.eclipse = e;
 
   if (e.visible) {
@@ -96,35 +117,53 @@ function computePrediction() {
     const from = (e.contacts.c1 || e.maxTime - 3600000) - pad;
     const to = (e.contacts.c4 || e.maxTime + 3600000) + pad;
     state.model = predictCurve(state.site, from, to, 300);
+    state.path = predictCurve(state.site, e.contacts.c1 || from, e.contacts.c4 || to, 90);
+    state.plan = timeline(e, state.site, 10);
+    // Was die erhöhte Position an Sonne dazugewinnt: einmal mit, einmal ohne Kimmtiefe
+    state.dipGainMs =
+      state.site.aboveTerrain > 0 && e.sunset
+        ? e.sunset - sunset({ ...state.site, aboveTerrain: 0 }, e.sunset - 3 * 3600000, 6)
+        : 0;
+    setStatus('Bereit');
   } else {
     state.model = [];
+    state.path = [];
+    state.plan = [];
+    state.dipGainMs = 0;
+    setStatus('Hier ist in den nächsten 400 Tagen keine Finsternis sichtbar', true);
   }
   renderPrediction();
+  renderPhotoTable();
+  renderLive();
 }
 
 function renderPrediction() {
   const e = state.eclipse;
-  const site = state.site;
-  $('site-info').textContent = `${site.lat.toFixed(4)}° N   ${site.lon.toFixed(4)}° E   ${Math.round(site.height || 0)} m`;
-
   if (!e?.visible) {
     $('eclipse-info').innerHTML =
       '<span class="muted">In den nächsten 400 Tagen ist hier keine Sonnenfinsternis sichtbar.</span>';
+    $('horizon-note').textContent = '';
     return;
   }
   const d = new Date(e.maxTime);
   const rows = [
     ['Datum', d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
-    ['Beginn (C1)', fmtTime(e.contacts.c1)],
-    ['Maximum', `${fmtTime(e.maxTime)}  ·  ${(e.max.obscuration * 100).toFixed(1)} % bedeckt`],
-    ['Ende (C4)', fmtTime(e.contacts.c4)],
-    ['Sonne steht dann', `${e.max.sunAlt.toFixed(1)}° über dem Horizont, Azimut ${Math.round(e.max.sunAz)}°`],
-    ['Restlicht im Maximum', `${(e.max.lightFraction * 100).toFixed(1)} % — Helligkeit fällt auf etwa ${Math.round(e.max.lux)} lx`],
+    ['Es geht los', `${fmtTime(e.contacts.c1)} — der Mond berührt den Sonnenrand`],
+    ['Maximum', `${fmtTime(e.maxTime)} — ${(e.max.obscuration * 100).toFixed(1)} % der Sonne bedeckt`],
   ];
   if (e.duration) {
-    rows.splice(3, 0, ['Totalität', `${(e.duration / 1000).toFixed(0)} s (C2 ${fmtTime(e.contacts.c2)})`]);
+    rows.push(['Totalität', `${(e.duration / 1000).toFixed(0)} s ab ${fmtTime(e.contacts.c2)}`]);
   }
   rows.push(['Sonnenuntergang', fmtTime(e.sunset)]);
+  rows.push(['Rechnerisches Ende', `${fmtTime(e.contacts.c4)} — der Mond gibt die Sonne wieder frei`]);
+  rows.push([
+    'Sonne im Maximum',
+    `${e.max.sunAlt.toFixed(1)}° über dem Horizont, Richtung ${compass(e.max.sunAz)} (${Math.round(e.max.sunAz)}°)`,
+  ]);
+  rows.push([
+    'Restlicht im Maximum',
+    `${(e.max.lightFraction * 100).toFixed(1)} % — es wird so hell wie eine knappe halbe Stunde später`,
+  ]);
 
   let html = rows
     .map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
@@ -132,12 +171,274 @@ function renderPrediction() {
 
   if (e.setsDuringEclipse) {
     const min = Math.round((e.contacts.c4 - e.sunset) / 60000);
+    const atSet = modelAt(e.sunset, state.site);
     html +=
-      `<div class="notice">Die Sonne geht ${min} Minuten vor dem Ende der Finsternis unter. ` +
-      `Der vierte Kontakt ist von hier aus nicht zu sehen — sorg für freie Sicht nach Westen, ` +
-      `sonst ist vorher Schluss.</div>`;
+      `<div class="notice"><strong>Die Sonne geht mitten in der Finsternis unter.</strong> ` +
+      `Um ${fmtClock(e.sunset)} verschwindet sie mit ${(atSet.obscuration * 100).toFixed(0)} % Bedeckung ` +
+      `hinter dem Horizont, ${min} Minuten vor dem rechnerischen Ende. Ihr seht also nicht das Ende, ` +
+      `sondern eine tief stehende Sichel, die untergeht. Dafür braucht ihr freie Sicht nach ` +
+      `${compass(atSet.sunAz)} — kein Baum, kein Hügel, kein Haus.</div>`;
   }
   $('eclipse-info').innerHTML = html;
+
+  const dip = horizonDip(state.site.aboveTerrain);
+  const basis = 'Höhe und Richtung, wie sie am Himmel stehen. Eine Faust am ausgestreckten Arm sind rund 10 Grad.';
+  $('horizon-note').textContent =
+    dip > 0.02
+      ? `${basis} Von ${Math.round(state.site.aboveTerrain)} m über dem Umland liegt der sichtbare Horizont ` +
+        `${dip.toFixed(2)}° tiefer als die Waagerechte (blaue Linie) — das sind ` +
+        `${Math.round(state.dipGainMs / 60000)} Minuten Sonne mehr als unten im Tal.`
+      : basis;
+}
+
+/* ---------- Zeitpunkt der Anzeige ---------- */
+
+function displayTime() {
+  return state.scrubT ?? Date.now();
+}
+
+function scrubRange() {
+  const e = state.eclipse;
+  if (!e?.visible) return null;
+  const pad = 10 * 60000;
+  return [(e.contacts.c1 ?? e.maxTime) - pad, (e.contacts.c4 ?? e.maxTime) + pad];
+}
+
+function syncScrubber() {
+  const r = scrubRange();
+  if (!r) return;
+  const t = displayTime();
+  const frac = Math.min(1, Math.max(0, (t - r[0]) / (r[1] - r[0])));
+  $('scrub').value = String(Math.round(frac * 1000));
+  $('scrub-label').textContent =
+    state.scrubT == null ? 'jetzt' : `Vorschau ${fmtClock(state.scrubT)}`;
+  $('scrub-label').classList.toggle('accent', state.scrubT != null);
+}
+
+/* ---------- Live-Anzeige ---------- */
+
+function renderLive() {
+  const e = state.eclipse;
+  if (!e?.visible || !state.site) return;
+  const t = displayTime();
+  const m = modelAt(t, state.site);
+
+  state.sun.draw(m, {
+    measuredLux: state.lastReading ? state.lastReading.value * state.scale : null,
+  });
+  state.horizon.draw({
+    path: state.path,
+    current: m,
+    dip: horizonDip(state.site.aboveTerrain),
+  });
+
+  renderHint(m);
+  renderStats(m);
+  renderPhotoLive(m);
+  syncScrubber();
+  drawChart();
+}
+
+function renderHint(m) {
+  const e = state.eclipse;
+  const now = Date.now();
+  const el = $('now-hint');
+  el.classList.remove('danger', 'good');
+
+  if (state.scrubT != null) {
+    el.innerHTML =
+      `<strong>Vorschau ${fmtClock(state.scrubT)}</strong><br />` +
+      `${(m.obscuration * 100).toFixed(1)} % bedeckt, Sonne ${m.sunAlt >= 0 ? `${m.sunAlt.toFixed(1)}° über dem Horizont` : 'schon untergegangen'}, Richtung ${compass(m.sunAz)}.`;
+    return;
+  }
+
+  const c1 = e.contacts.c1;
+  const end = e.endsVisible ?? e.contacts.c4;
+  if (now < c1 - 30 * 60000) {
+    el.innerHTML =
+      `<strong>Noch ${fmtCountdown(c1 - now)} bis es losgeht.</strong><br />` +
+      `Um ${fmtClock(c1)} berührt der Mond den Sonnenrand. Sucht euch bis dahin einen Platz mit freier ` +
+      `Sicht nach ${compass(e.max.sunAz)} und legt das Handy für die Messung schon hin.`;
+  } else if (now < c1) {
+    el.classList.add('good');
+    el.innerHTML =
+      `<strong>Gleich geht es los: noch ${fmtCountdown(c1 - now)}.</strong><br />` +
+      `Jetzt die Messung starten, damit ein Stück unbedeckte Kurve als Eichung dabei ist. ` +
+      `Filter auf die Kamera, Brille griffbereit.`;
+  } else if (now <= end) {
+    el.classList.add('good');
+    const trend = m.t < e.maxTime ? 'Es wird weiter dunkler' : 'Die Sonne kommt wieder heraus';
+    el.innerHTML =
+      `<strong>Läuft — ${(m.obscuration * 100).toFixed(1)} % bedeckt.</strong><br />` +
+      `${trend}. Maximum um ${fmtClock(e.maxTime)} mit ${(e.max.obscuration * 100).toFixed(1)} %. ` +
+      (e.setsDuringEclipse
+        ? `Die Sonne geht schon um ${fmtClock(e.sunset)} unter, bis dahin sind es ${fmtCountdown(e.sunset - now)}.`
+        : `Vorbei ist es um ${fmtClock(e.contacts.c4)}.`);
+  } else {
+    el.innerHTML =
+      `<strong>Vorbei.</strong> Maximal ${(e.max.obscuration * 100).toFixed(1)} % bedeckt um ${fmtClock(e.maxTime)}. ` +
+      `Mit dem Schieber kannst du den Verlauf noch einmal durchgehen, und unter „Messen“ liegt deine Kurve.`;
+  }
+}
+
+function renderStats(m) {
+  const e = state.eclipse;
+  const now = Date.now();
+  const cells = [
+    ['bedeckt', `${(m.obscuration * 100).toFixed(1)} %`],
+    ['Restlicht', `${(m.lightFraction * 100).toFixed(1)} %`],
+    ['Sonnenhöhe', m.sunAlt >= 0 ? `${m.sunAlt.toFixed(1)}°` : 'unter'],
+    ['Richtung', `${compass(m.sunAz)} ${Math.round(m.sunAz)}°`],
+    ['Maximum', fmtClock(e.maxTime)],
+    [
+      e.setsDuringEclipse ? 'Sonne unter' : 'Ende',
+      fmtClock(e.setsDuringEclipse ? e.sunset : e.contacts.c4),
+    ],
+  ];
+  if (state.scrubT == null && now < e.maxTime) {
+    cells[4] = ['bis Maximum', fmtCountdown(e.maxTime - now)];
+  }
+  $('live-stats').innerHTML = cells
+    .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+}
+
+/* ---------- Foto ---------- */
+
+function gear() {
+  const sensor = SENSORS[$('ph-sensor').value] || SENSORS.apsc;
+  return {
+    focal: Number($('ph-focal').value) || 300,
+    sensor,
+    pixels: Number($('ph-pixels').value) || 6000,
+    aperture: Number($('ph-aperture').value) || 8,
+    iso: Number($('ph-iso').value) || 100,
+    k: Number($('ph-haze').value) || 0.3,
+  };
+}
+
+function renderGear() {
+  const g = gear();
+  const size = sunSize(g.focal, g.sensor, g.pixels);
+  const limit = maxShutter(g.focal, g.sensor, g.pixels);
+  const pctHeight = size.frameHeight * 100;
+
+  let verdict;
+  if (pctHeight < 6) verdict = 'winzig — nur als Punkt in der Landschaft brauchbar';
+  else if (pctHeight < 15) verdict = 'klein, aber die Sichel ist erkennbar';
+  else if (pctHeight < 45) verdict = 'gute Größe für ein Einzelbild';
+  else if (pctHeight < 85) verdict = 'formatfüllend';
+  else verdict = 'passt nicht mehr ganz ins Bild';
+
+  $('ph-gear').innerHTML = [
+    ['Sonne im Bild', `${Math.round(size.px)} px`],
+    ['Anteil Bildhöhe', `${pctHeight.toFixed(0)} %`],
+    ['Bildfeld', `${size.fovWidthDeg.toFixed(1)}° × ${size.fovHeightDeg.toFixed(1)}°`],
+    ['ohne Nachführung bis', shutterLabel(limit)],
+    ['Urteil', verdict],
+  ]
+    .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+}
+
+function renderPhotoLive(m) {
+  const g = gear();
+  const limit = maxShutter(g.focal, g.sensor, g.pixels);
+  const dip = horizonDip(state.site.aboveTerrain);
+  const above = m.sunAlt + dip;
+  const gone = state.eclipse?.sunset != null && m.t > state.eclipse.sunset;
+  const a = shootingAdvice({
+    sunAlt: m.sunAlt,
+    obscuration: m.obscuration,
+    aperture: g.aperture,
+    iso: g.iso,
+    k: g.k,
+    maxSeconds: limit,
+    gone,
+  });
+
+  const el = $('photo-live');
+  el.classList.toggle('danger', a.mode === 'wechsel');
+
+  const setting = `f/${g.aperture}, ISO ${g.iso}`;
+  const when = state.scrubT == null ? 'Jetzt' : `Um ${fmtClock(state.scrubT)}`;
+
+  let advice = '';
+  if (a.mode === 'wechsel') {
+    advice =
+      `Ohne Filter bei f/${g.aperture}, ISO ${a.isoHint}${a.isoHint !== g.iso ? ' (runter damit)' : ''}: ` +
+      `<strong>${a.exposure.label}</strong>. ` +
+      `Mit Filter wären es ${a.filtered.label} — zu lang für ${g.focal} mm, ab ${shutterLabel(limit)} verwischt die Erddrehung. `;
+  } else if (a.mode === 'beides') {
+    advice =
+      `Bei ${setting}: mit ND-5-Filter <strong>${a.filtered.label}</strong>, ` +
+      `ohne Filter <strong>${a.bare.label}</strong>. `;
+  } else if (a.mode === 'filter') {
+    advice = `Startwert bei ${setting} mit ND-5-Filter: <strong>${a.exposure.label}</strong>. `;
+    if (a.gefiltertZuLang) {
+      advice += `Die Grenze ohne Nachführung liegt bei ${g.focal} mm schon bei ${shutterLabel(limit)}. `;
+    }
+  }
+
+  el.innerHTML =
+    `<strong>${when}: ${(m.obscuration * 100).toFixed(1)} % bedeckt, Sonne ` +
+    `${gone || above < 0 ? 'unter dem Horizont' : `${above.toFixed(1)}° über dem Horizont`} im ${compass(m.sunAz)}.</strong><br />` +
+    advice +
+    `<br />${a.note}`;
+}
+
+function renderPhotoTable() {
+  const g = gear();
+  const rows = state.plan;
+  if (!rows.length) {
+    $('ph-table').innerHTML = '<span class="muted">Keine Finsternis in Sicht.</span>';
+    return;
+  }
+  const limit = maxShutter(g.focal, g.sensor, g.pixels);
+  const body = rows
+    .map((r) => {
+      const a = shootingAdvice({
+        sunAlt: r.sunAlt,
+        obscuration: r.obscuration,
+        aperture: g.aperture,
+        iso: g.iso,
+        k: g.k,
+        maxSeconds: limit,
+        gone: r.belowHorizon,
+      });
+      const filt =
+        a.mode === 'weg'
+          ? '—'
+          : a.mode === 'wechsel'
+            ? 'ab'
+            : a.mode === 'beides'
+              ? 'ND 5 oder ab'
+              : 'ND 5';
+      const zeit =
+        a.mode === 'weg'
+          ? '—'
+          : a.mode === 'beides'
+            ? `${a.filtered.label} / ${a.bare.label}`
+            : a.exposure.label +
+            (a.mode === 'wechsel' && a.isoHint !== g.iso ? ` bei ISO ${a.isoHint}` : '');
+      return (
+        `<tr class="${r.label ? 'event' : ''}${r.belowHorizon ? ' below' : ''}">` +
+        `<td>${fmtClock(r.t)}</td>` +
+        `<td>${(r.obscuration * 100).toFixed(0)} %</td>` +
+        `<td>${r.belowHorizon ? '—' : `${r.altAboveHorizon.toFixed(1)}°`}</td>` +
+        `<td>${compass(r.sunAz)}</td>` +
+        `<td>${filt}</td>` +
+        `<td>${zeit}</td>` +
+        `<td class="ev">${r.label || ''}</td>` +
+        `</tr>`
+      );
+    })
+    .join('');
+
+  $('ph-table').innerHTML =
+    `<table><thead><tr>` +
+    `<th>Zeit</th><th>bed.</th><th>Höhe</th><th>Ri.</th><th>Filter</th><th>Zeit bei f/${g.aperture}, ISO ${g.iso}</th><th></th>` +
+    `</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /* ---------- Messung ---------- */
@@ -193,7 +494,8 @@ function tick() {
   if (state.sonifier.running && state.eclipse?.visible) {
     state.sonifier.update(modelAt(now, state.site).lightFraction);
   }
-  renderLive();
+  renderMeasureReadout();
+  drawChart();
 }
 
 function renderMeterStatus(s) {
@@ -207,50 +509,17 @@ function renderMeterStatus(s) {
   $('meter-status').classList.toggle('warn', !s.locked && !s.exposureTime);
 }
 
-/* ---------- Anzeige ---------- */
-
-function renderLive() {
-  const now = Date.now();
-  const e = state.eclipse;
-
-  if (e?.visible) {
-    const m = modelAt(now, state.site);
-    const running = now >= (e.contacts.c1 || 0) && now <= (e.contacts.c4 || 0);
-
-    if (now < e.contacts.c1) {
-      $('big-label').textContent = 'bis zum ersten Kontakt';
-      $('big-value').textContent = fmtCountdown(e.contacts.c1 - now);
-    } else if (running) {
-      $('big-label').textContent = 'Sonne bedeckt';
-      $('big-value').textContent = `${(m.obscuration * 100).toFixed(1)} %`;
-    } else {
-      $('big-label').textContent = 'Finsternis vorbei — Maximum war';
-      $('big-value').textContent = `${(e.max.obscuration * 100).toFixed(1)} %`;
-    }
-
-    $('sub-stats').innerHTML = [
-      ['Restlicht', `${(m.lightFraction * 100).toFixed(1)} %`],
-      ['erwartet', `${Math.round(m.lux)} lx`],
-      ['Sonnenhöhe', `${m.sunAlt.toFixed(1)}°`],
-      ['Maximum um', fmtClock(e.maxTime)],
-    ]
-      .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`)
-      .join('');
-  }
-
+function renderMeasureReadout() {
   const r = state.lastReading;
-  if (r) {
-    const measuredLux = r.value * state.scale;
-    const warn = [];
-    if (r.saturated > 0.02) warn.push('überbelichtet — Kamera weg vom Hellen');
-    if (r.dark > 0.5) warn.push('zu dunkel — Messgrenze erreicht');
-    $('measure-readout').innerHTML =
-      `<div><span class="k">gemessen</span><span class="v">${measuredLux < 10 ? measuredLux.toFixed(2) : Math.round(measuredLux)} lx</span></div>` +
-      `<div><span class="k">Werte</span><span class="v">${state.session.samples.length}</span></div>` +
-      (warn.length ? `<div class="warn full">${warn.join(' · ')}</div>` : '');
-  }
-
-  drawChart();
+  if (!r) return;
+  const measuredLux = r.value * state.scale;
+  const warn = [];
+  if (r.saturated > 0.02) warn.push('überbelichtet — Kamera weg vom Hellen');
+  if (r.dark > 0.5) warn.push('zu dunkel — Messgrenze erreicht');
+  $('measure-readout').innerHTML =
+    `<div><span class="k">gemessen</span><span class="v">${measuredLux < 10 ? measuredLux.toFixed(2) : Math.round(measuredLux)} lx</span></div>` +
+    `<div><span class="k">Werte</span><span class="v">${state.session.samples.length}</span></div>` +
+    (warn.length ? `<div class="warn full">${warn.join(' · ')}</div>` : '');
 }
 
 function drawChart() {
@@ -324,34 +593,124 @@ async function shareCard() {
   }
 }
 
+/* ---------- Standort-Auswahl ---------- */
+
+function openSiteSheet() {
+  const s = state.site;
+  $('in-lat').value = s.lat.toFixed(4);
+  $('in-lon').value = s.lon.toFixed(4);
+  $('in-height').value = Math.round(s.height || 0);
+  $('in-above').value = Math.round(s.aboveTerrain || 0);
+  $('site-presets').innerHTML =
+    '<div class="results-head">Voreingestellt</div>' +
+    PRESETS.map(
+      (p, i) =>
+        `<button class="result" data-preset="${i}">${p.name}<span class="muted"> · ${p.lat.toFixed(3)}°, ${p.lon.toFixed(3)}°, ${p.height} m</span></button>`
+    ).join('');
+  $('site-presets').querySelectorAll('[data-preset]').forEach((b) => {
+    b.onclick = () => {
+      setSite({ ...PRESETS[Number(b.dataset.preset)] });
+      closeSiteSheet();
+    };
+  });
+  $('site-sheet').hidden = false;
+}
+
+function closeSiteSheet() {
+  $('site-sheet').hidden = true;
+  $('site-results').innerHTML = '';
+}
+
+async function searchPlace() {
+  const q = $('site-search').value.trim();
+  if (!q) return;
+  $('site-results').innerHTML = '<div class="results-head">wird gesucht …</div>';
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    const list = await res.json();
+    if (!list.length) {
+      $('site-results').innerHTML = '<div class="results-head">nichts gefunden</div>';
+      return;
+    }
+    $('site-results').innerHTML =
+      '<div class="results-head">Treffer</div>' +
+      list
+        .map(
+          (r, i) =>
+            `<button class="result" data-hit="${i}">${r.display_name.split(',').slice(0, 3).join(',')}</button>`
+        )
+        .join('');
+    $('site-results').querySelectorAll('[data-hit]').forEach((b) => {
+      b.onclick = () => {
+        const r = list[Number(b.dataset.hit)];
+        $('in-lat').value = Number(r.lat).toFixed(4);
+        $('in-lon').value = Number(r.lon).toFixed(4);
+        $('site-results').innerHTML = `<div class="results-head">übernommen: ${r.display_name.split(',')[0]}</div>`;
+        $('site-search').dataset.picked = r.display_name.split(',')[0];
+      };
+    });
+  } catch {
+    $('site-results').innerHTML =
+      '<div class="results-head">Suche geht nur online — Koordinaten von Hand eintragen</div>';
+  }
+}
+
 /* ---------- Start ---------- */
+
+function setupTabs() {
+  const tabs = [...document.querySelectorAll('.tab')];
+  const panels = [...document.querySelectorAll('.panel')];
+  tabs.forEach((t) => {
+    t.onclick = () => {
+      tabs.forEach((x) => x.classList.toggle('active', x === t));
+      panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === t.dataset.tab));
+      resizeAll();
+      renderLive();
+    };
+  });
+}
+
+function resizeAll() {
+  state.chart.resize();
+  state.sun.resize();
+  state.horizon.resize();
+}
 
 async function init() {
   state.chart = new Chart($('chart'));
+  state.sun = new SunView($('sunview'));
+  state.horizon = new HorizonView($('horizonview'));
+  setupTabs();
   window.addEventListener('resize', () => {
-    state.chart.resize();
-    drawChart();
+    resizeAll();
+    renderLive();
   });
 
   // Standort: gespeicherter zuerst, damit sofort etwas dasteht
   const saved = loadSavedSite();
-  if (saved) {
-    state.site = saved;
-    computePrediction();
-  }
-  const located = await locate();
-  if (located) {
-    state.site = located;
-    saveSite(located);
-    computePrediction();
-    setStatus('Bereit');
-  } else if (!saved) {
-    state.site = { lat: 51.0, lon: 7.0, height: 100 };
-    computePrediction();
-    setStatus('Kein GPS — Standort bitte von Hand eintragen', true);
-  } else {
-    setStatus('Bereit (gespeicherter Standort)');
-  }
+  state.site = saved || { ...PRESETS[0] };
+  renderSiteChip();
+  computePrediction();
+
+  // GPS nur beim allerersten Start automatisch übernehmen. Wer den Ort einmal
+  // selbst gesetzt hat, will nicht, dass ihn die App vom Sofa aus wieder umstellt.
+  locate().then((located) => {
+    if (!located) {
+      if (!saved) setStatus('Kein GPS — Standort oben rechts eintragen', true);
+      return;
+    }
+    if (!saved) {
+      setSite(located);
+      return;
+    }
+    const km = 111 * Math.hypot(saved.lat - located.lat, (saved.lon - located.lon) * 0.67);
+    if (km > 10) {
+      setStatus(`Du stehst ${Math.round(km)} km vom eingestellten Ort entfernt — oben rechts umstellen`, true);
+    }
+  });
 
   // Angefangene Messung anbieten
   const old = Session.load();
@@ -363,7 +722,7 @@ async function init() {
       $('btn-resume').onclick = () => {
         state.session = old;
         $('resume-bar').hidden = true;
-        renderLive();
+        drawChart();
       };
       $('btn-discard').onclick = () => {
         Session.clear();
@@ -377,9 +736,11 @@ async function init() {
     if (state.sonifier.running) {
       state.sonifier.stop();
       $('btn-sound').classList.remove('active');
+      $('btn-sound').textContent = 'Ton an';
     } else {
       state.sonifier.start();
       $('btn-sound').classList.add('active');
+      $('btn-sound').textContent = 'Ton aus';
     }
   };
   $('btn-night').onclick = () => {
@@ -416,17 +777,65 @@ async function init() {
       renderMeterStatus(status);
     }
   };
-  $('btn-manual-site').onclick = () => {
-    const lat = Number(prompt('Breite (Nord positiv)', state.site.lat.toFixed(4)));
-    const lon = Number(prompt('Länge (Ost positiv)', state.site.lon.toFixed(4)));
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      state.site = { lat, lon, height: state.site.height || 0 };
-      saveSite(state.site);
-      computePrediction();
-    }
+
+  // Zeitschieber
+  $('scrub').oninput = (ev) => {
+    const r = scrubRange();
+    if (!r) return;
+    state.scrubT = r[0] + (Number(ev.target.value) / 1000) * (r[1] - r[0]);
+    renderLive();
+  };
+  $('btn-now').onclick = () => {
+    state.scrubT = null;
+    renderLive();
   };
 
-  // Anzeige läuft auch ohne Messung mit, damit der Countdown stimmt
+  // Standort
+  $('btn-site').onclick = openSiteSheet;
+  $('btn-site-close').onclick = closeSiteSheet;
+  $('btn-site-search').onclick = searchPlace;
+  $('site-search').onkeydown = (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      searchPlace();
+    }
+  };
+  $('btn-site-gps').onclick = async () => {
+    $('btn-site-gps').textContent = 'GPS wird abgefragt …';
+    const p = await locate();
+    $('btn-site-gps').textContent = 'Aktuellen Standort per GPS holen';
+    if (!p) {
+      setStatus('GPS nicht verfügbar', true);
+      return;
+    }
+    setSite(p);
+    closeSiteSheet();
+  };
+  $('btn-site-save').onclick = () => {
+    const lat = Number($('in-lat').value);
+    const lon = Number($('in-lon').value);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    setSite({
+      lat,
+      lon,
+      height: Number($('in-height').value) || 0,
+      aboveTerrain: Number($('in-above').value) || 0,
+      name: $('site-search').dataset.picked || 'eigener Standort',
+    });
+    closeSiteSheet();
+  };
+
+  // Kameradaten
+  for (const id of ['ph-focal', 'ph-sensor', 'ph-pixels', 'ph-aperture', 'ph-iso', 'ph-haze']) {
+    $(id).oninput = () => {
+      renderGear();
+      renderPhotoTable();
+      renderLive();
+    };
+  }
+  renderGear();
+
+  // Anzeige läuft mit, damit Countdown und Sonnenbild aktuell bleiben
   setInterval(renderLive, 1000);
   renderLive();
 

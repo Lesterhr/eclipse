@@ -148,6 +148,9 @@ export function modelAt(unixMs, site) {
     sunAlt: sky.sunAlt,
     sunAltGeo: sky.sunAltGeo,
     sunAz: sky.sunAz,
+    /** Mondmitte relativ zur Sonnenmitte in Grad, Beobachtersicht: +x rechts, +y oben */
+    offsetX: sky.offsetX,
+    offsetY: sky.offsetY,
     obscuration: cov.obscuration,
     magnitude: cov.magnitude,
     phase: cov.phase,
@@ -168,8 +171,22 @@ export function modelAt(unixMs, site) {
  *
  * @returns {number|null} Zeitpunkt in Unix-ms, oder null wenn die Sonne im Suchfenster nicht untergeht
  */
+/**
+ * Kimmtiefe in Grad: um so viel liegt der sichtbare Horizont unter der Waagerechten,
+ * wenn man erhöht steht. Auf einem Aussichtsturm über flachem Umland verlängert das
+ * den Sonnenuntergang spürbar — und genau daran hängt, ob man das Ende einer
+ * Finsternis noch sieht.
+ *
+ * @param {number} heightAboveTerrainM Augenhöhe über dem umgebenden Gelände
+ */
+export function horizonDip(heightAboveTerrainM) {
+  const h = Math.max(0, heightAboveTerrainM || 0);
+  return 0.0293 * Math.sqrt(h);
+}
+
 export function sunset(site, fromMs, withinHours = 18) {
-  const alt = (t) => skyState(t, site).sunAltGeo + 0.833;
+  const dip = horizonDip(site.aboveTerrain);
+  const alt = (t) => skyState(t, site).sunAltGeo + 0.833 + dip;
   const step = 300000;
   let prev = alt(fromMs);
   for (let t = fromMs + step; t <= fromMs + withinHours * 3600000; t += step) {
@@ -362,6 +379,58 @@ export function predictCurve(site, fromMs, toMs, points = 240) {
     out.push(modelAt(fromMs + i * dt, site));
   }
   return out;
+}
+
+/**
+ * Ablaufplan in festen Schritten: was steht wann wo am Himmel.
+ *
+ * Für die Kamera ist nicht der Bedeckungsgrad die entscheidende Zahl, sondern wohin
+ * das Stativ zeigen muss und wie hoch die Sonne dann noch steht. Beides kommt hier
+ * zusammen, zusätzlich die Ereignisse (Kontakte, Maximum, Sonnenuntergang) an ihrer
+ * echten Zeit statt aufs Raster gerundet.
+ *
+ * @param {object} eclipse Ergebnis von findEclipse
+ * @param {{lat:number, lon:number, height?:number}} site
+ * @param {number} stepMin Rasterweite in Minuten
+ * @returns {Array<{t:number, label:string|null, obscuration:number, sunAlt:number, sunAz:number, lux:number}>}
+ */
+export function timeline(eclipse, site, stepMin = 10) {
+  if (!eclipse?.visible) return [];
+  const events = [
+    [eclipse.contacts.c1, 'Erster Kontakt'],
+    [eclipse.contacts.c2, 'Totalität beginnt'],
+    [eclipse.maxTime, 'Maximum'],
+    [eclipse.contacts.c3, 'Totalität endet'],
+    [eclipse.sunset, 'Sonnenuntergang'],
+    [eclipse.contacts.c4, 'Letzter Kontakt'],
+  ].filter(([t]) => t != null);
+
+  const from = eclipse.contacts.c1 ?? eclipse.maxTime;
+  const to = eclipse.contacts.c4 ?? eclipse.maxTime;
+  const step = stepMin * 60000;
+  const marks = [];
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) marks.push([t, null]);
+
+  // Von einem erhöhten Standort liegt der sichtbare Horizont tiefer. Die Sonne steht
+  // dann noch über ihm, obwohl ihre Höhe über der Waagerechten schon negativ ist —
+  // genau darum geht man ja auf den Turm.
+  const dip = horizonDip(site.aboveTerrain);
+
+  const all = [...events, ...marks].sort((a, b) => a[0] - b[0]);
+  return all.map(([t, label]) => {
+    const m = modelAt(t, site);
+    return {
+      t,
+      label,
+      obscuration: m.obscuration,
+      sunAlt: m.sunAlt,
+      /** Höhe über dem sichtbaren Horizont — die Zahl, die der Fotograf braucht */
+      altAboveHorizon: m.sunAlt + dip,
+      sunAz: m.sunAz,
+      lux: m.lux,
+      belowHorizon: eclipse.sunset != null ? t >= eclipse.sunset : m.sunAlt < 0,
+    };
+  });
 }
 
 /**

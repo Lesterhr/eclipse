@@ -376,6 +376,22 @@ export function skyState(unixMs, site) {
   const moonRadius = Math.asin(R_MOON / moonTopo.dist) * RAD;
   const sep = angularSeparation(sunTopo, moonTopo);
   const horiz = equatorialToHorizontal(sunTopo.ra, sunTopo.dec, site.lat, site.lon, gast);
+  const moonHoriz = equatorialToHorizontal(moonTopo.ra, moonTopo.dec, site.lat, site.lon, gast);
+
+  // Versatz des Mondes gegen die Sonne so, wie er am Himmel wirklich aussieht:
+  // wer zur Sonne schaut, hat wachsenden Azimut rechts und wachsende Höhe oben.
+  // Damit braucht es keinen Positions- oder parallaktischen Winkel, die Horizont-
+  // koordinaten liefern die Bildlage direkt.
+  const dAzRaw = ((moonHoriz.az - horiz.az + 540) % 360) - 180;
+  let offsetX = dAzRaw * Math.cos(horiz.alt * DEG);
+  let offsetY = moonHoriz.alt - horiz.alt;
+  // Kleinwinkelnäherung gegen den exakten Abstand normieren
+  const approx = Math.hypot(offsetX, offsetY);
+  if (approx > 1e-9) {
+    const k = sep / approx;
+    offsetX *= k;
+    offsetY *= k;
+  }
 
   return {
     unixMs,
@@ -386,6 +402,11 @@ export function skyState(unixMs, site) {
     /** geometrische Höhe ohne Refraktion — Bezug für die Auf- und Untergangsrechnung */
     sunAltGeo: horiz.alt,
     sunAz: horiz.az,
+    moonAlt: moonHoriz.alt,
+    moonAz: moonHoriz.az,
+    /** Mondmitte relativ zur Sonnenmitte in Grad, aus Sicht des Beobachters: +x rechts, +y oben */
+    offsetX,
+    offsetY,
     gast,
   };
 }

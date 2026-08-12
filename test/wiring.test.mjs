@@ -54,7 +54,16 @@ console.log('\nDateien und Verweise');
   expect(fehlend.length === 0, 'jede vom Service Worker gecachte Datei existiert', fehlend.join(', '));
 
   // Umgekehrt: jedes Modul, das index.html oder ein Modul lädt, muss im Cache stehen
-  const moduleFiles = ['js/app.js', 'js/astro.js', 'js/eclipse.js', 'js/meter.js', 'js/chart.js', 'js/store.js'];
+  const moduleFiles = [
+    'js/app.js',
+    'js/astro.js',
+    'js/eclipse.js',
+    'js/meter.js',
+    'js/chart.js',
+    'js/store.js',
+    'js/sky.js',
+    'js/photo.js',
+  ];
   const nichtGecacht = moduleFiles.filter((f) => !assets.includes(f));
   expect(nichtGecacht.length === 0, 'alle Module stehen im Offline-Cache', nichtGecacht.join(', '));
 
