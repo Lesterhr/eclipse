@@ -125,9 +125,10 @@ h2 {
   border-radius: 10px;
   color: var(--muted);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 550;
-  padding: 9px 4px;
+  padding: 9px 2px;
+  white-space: nowrap;
 }
 
 .tab.active {

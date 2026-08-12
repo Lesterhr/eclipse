@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "icons": "node tools/make-icons.mjs",
-    "test": "node test/astro.test.mjs && node test/eclipse.test.mjs && node test/photo.test.mjs && node test/wiring.test.mjs && node test/app.smoke.test.mjs"
+    "test": "node test/astro.test.mjs && node test/eclipse.test.mjs && node test/photo.test.mjs && node test/compass.test.mjs && node test/wiring.test.mjs && node test/app.smoke.test.mjs"
   },
   "license": "MIT"
 }

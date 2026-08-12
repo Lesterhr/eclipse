@@ -120,12 +120,12 @@ const ids = [...readFileSync(join(root, 'index.html'), 'utf8').matchAll(/\bid="(
 const elements = new Map(ids.map((id) => [id, new StubElement(id)]));
 
 // Reiter und Bereiche kommen über Klassen, nicht über IDs
-const tabs = ['live', 'messen', 'foto', 'hilfe'].map((name) => {
+const tabs = ['live', 'peilen', 'messen', 'foto', 'hilfe'].map((name) => {
   const el = new StubElement('', 'button');
   el.dataset.tab = name;
   return el;
 });
-const panels = ['live', 'messen', 'foto', 'hilfe'].map((name) => {
+const panels = ['live', 'peilen', 'messen', 'foto', 'hilfe'].map((name) => {
   const el = new StubElement('', 'section');
   el.dataset.panel = name;
   return el;
@@ -141,7 +141,16 @@ globalThis.document = {
   body: new StubElement('', 'body'),
   visibilityState: 'visible',
 };
-globalThis.window = { devicePixelRatio: 2, addEventListener: () => {} };
+// Lagesensor-Attrappe: die angemeldeten Hörer landen hier und lassen sich von Hand füttern
+const sensorHoerer = [];
+globalThis.window = {
+  devicePixelRatio: 2,
+  DeviceOrientationEvent: function DeviceOrientationEvent() {},
+  addEventListener: (typ, fn) => {
+    if (typ.startsWith('deviceorientation')) sensorHoerer.push(fn);
+  },
+  removeEventListener: () => {},
+};
 globalThis.navigator = {};
 globalThis.localStorage = {
   store: {},
@@ -258,6 +267,54 @@ console.log('\nVoreinstellung Buchbergwarte');
     elements.get('horizon-note').textContent.includes('Minuten Sonne mehr'),
     'die gewonnene Zeit durch die Kimmtiefe wird beziffert',
     elements.get('horizon-note').textContent
+  );
+}
+
+console.log('\nPeilen');
+{
+  let fehler = null;
+  try {
+    await elements.get('btn-compass').onclick();
+    expect(sensorHoerer.length > 0, 'der Kompass meldet sich beim Lagesensor an');
+    // Handy hochkant nach Westen, dazu flach, gerollt und im Querformat
+    const lagen = [
+      { alpha: 90, beta: 90, gamma: 0 },
+      { alpha: 0, beta: 0, gamma: 0 },
+      { alpha: 213, beta: 118, gamma: -37 },
+      { alpha: 44, beta: 95, gamma: 12 },
+    ];
+    for (const lage of lagen) {
+      for (const drehung of [0, 90, 270]) {
+        globalThis.window.orientation = drehung;
+        sensorHoerer.forEach((fn) =>
+          fn({ type: 'deviceorientationabsolute', absolute: true, ...lage })
+        );
+        timers.forEach((fn) => fn());
+      }
+    }
+    globalThis.window.orientation = 0;
+    // Eichen auf die Sonne, zurücksetzen, Kompass wieder aus
+    elements.get('btn-cal-sun').onclick();
+    elements.get('btn-cal-reset').onclick();
+    await elements.get('btn-compass').onclick();
+  } catch (err) {
+    fehler = err;
+  }
+  expect(!fehler, 'der Peilbereich läuft durch', fehler && fehler.stack);
+  expect(
+    elements.get('aim-stats').innerHTML.includes('Untergang'),
+    'die Peilzahlen stehen',
+    elements.get('aim-stats').innerHTML.slice(0, 80)
+  );
+  expect(
+    elements.get('aim-hint').innerHTML.length > 40,
+    'der Peilhinweis ist gefüllt',
+    elements.get('aim-hint').innerHTML
+  );
+  expect(
+    elements.get('rose-note').textContent.length > 10,
+    'der Zustand des Sensors steht dabei',
+    elements.get('rose-note').textContent
   );
 }
 

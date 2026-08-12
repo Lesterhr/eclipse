@@ -7,6 +7,15 @@ import { LightMeter, AmbientSensor, Sonifier } from './meter.js';
 import { Session, download } from './store.js';
 import { Chart, renderShareCard } from './chart.js';
 import { SunView, HorizonView, compass } from './sky.js';
+import {
+  CompassSensor,
+  AimView,
+  RoseView,
+  orientationFrame,
+  screenAngle,
+  deltaAngle,
+  fistHint,
+} from './compass.js';
 import { SENSORS, sunSize, maxShutter, shootingAdvice, shutterLabel } from './photo.js';
 
 const $ = (id) => document.getElementById(id);
@@ -43,6 +52,13 @@ const state = {
   chart: null,
   sun: null,
   horizon: null,
+  aim: null,
+  rose: null,
+  compass: new CompassSensor(),
+  /** Feinabgleich des Kompasses in Grad, wird auf jedes Gerätazimut addiert */
+  compassOffset: 0,
+  /** true, solange der Reiter „Peilen“ oben ist — nur dann läuft die Bildschleife */
+  aiming: false,
   meter: new LightMeter(),
   ambient: new AmbientSensor(),
   sonifier: new Sonifier(),
@@ -88,6 +104,19 @@ function loadSavedSite() {
 function saveSite(site) {
   try {
     localStorage.setItem('eclipse-site', JSON.stringify(site));
+  } catch {
+    /* egal */
+  }
+}
+
+function loadOffset() {
+  const v = Number(localStorage.getItem('eclipse-compass-offset'));
+  return Number.isFinite(v) ? v : 0;
+}
+
+function saveOffset(deg) {
+  try {
+    localStorage.setItem('eclipse-compass-offset', String(deg));
   } catch {
     /* egal */
   }
@@ -234,6 +263,7 @@ function renderLive() {
 
   renderHint(m);
   renderStats(m);
+  renderAim(m);
   renderPhotoLive(m);
   syncScrubber();
   drawChart();
@@ -301,6 +331,133 @@ function renderStats(m) {
   $('live-stats').innerHTML = cells
     .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`)
     .join('');
+}
+
+/* ---------- Peilen ---------- */
+
+function compassFrame() {
+  const r = state.compass.reading;
+  return r ? orientationFrame(r, screenAngle(), state.compassOffset) : null;
+}
+
+/** Azimut des Untergangspunkts — die Richtung, in der wirklich nichts stehen darf */
+function sunsetAzimuth() {
+  const e = state.eclipse;
+  return e?.visible && e.sunset ? modelAt(e.sunset, state.site).sunAz : null;
+}
+
+function renderAim(m) {
+  const frame = compassFrame();
+  const sunsetAz = sunsetAzimuth();
+
+  state.aim.draw({ model: m, frame, sunsetAz });
+  state.rose.draw({
+    sunAz: m.sunAz,
+    sunAlt: m.sunAlt,
+    path: state.path,
+    facing: frame ? frame.facing : null,
+    sunsetAz,
+  });
+
+  const el = $('aim-hint');
+  el.classList.remove('good', 'danger');
+  const wo =
+    m.sunAlt >= 0
+      ? `Die Sonne steht ${compass(m.sunAz)} ${Math.round(m.sunAz)}°, ${m.sunAlt.toFixed(1)}° hoch — ${fistHint(m.sunAlt)}`
+      : `Die Sonne ist ${compass(m.sunAz)} untergegangen`;
+
+  if (!frame) {
+    el.innerHTML =
+      `<strong>${wo}.</strong><br />` +
+      `Schalt den Kompass ein, dann dreht sich die Rose mit dir und der Sucher zeigt dir ` +
+      `die Sonne dort, wo du das Handy hinhältst.`;
+  } else {
+    const d = deltaAngle(frame.facing, m.sunAz);
+    const dAlt = m.sunAlt - frame.tilt;
+    if (Math.abs(d) < 5 && !frame.flat) {
+      el.classList.add('good');
+      el.innerHTML =
+        `<strong>Du schaust genau hin.</strong><br />${wo}. ` +
+        (Math.abs(dAlt) < 5
+          ? 'Das Handy zeigt auch in der Höhe richtig.'
+          : `Jetzt noch ${Math.round(Math.abs(dAlt))}° ${dAlt > 0 ? 'höher' : 'tiefer'} zielen.`);
+    } else {
+      el.innerHTML =
+        `<strong>Dreh dich ${Math.round(Math.abs(d))}° nach ${d > 0 ? 'rechts' : 'links'}.</strong><br />${wo}.` +
+        (frame.flat ? ' Das Handy liegt flach, gepeilt wird gerade über die Oberkante.' : '');
+    }
+  }
+
+  const cells = [
+    ['Sonne', `${compass(m.sunAz)} ${Math.round(m.sunAz)}°`],
+    ['Höhe', m.sunAlt >= 0 ? `${m.sunAlt.toFixed(1)}°` : 'unter'],
+    ['du schaust', frame ? `${compass(frame.facing)} ${Math.round(frame.facing)}°` : '—'],
+    [
+      'Abweichung',
+      frame
+        ? (() => {
+            const d = deltaAngle(frame.facing, m.sunAz);
+            return Math.abs(d) < 2 ? 'passt' : `${Math.round(Math.abs(d))}° ${d > 0 ? 'rechts' : 'links'}`;
+          })()
+        : '—',
+    ],
+    ['Untergang', sunsetAz == null ? '—' : `${compass(sunsetAz)} ${Math.round(sunsetAz)}°`],
+    ['bedeckt', `${(m.obscuration * 100).toFixed(1)} %`],
+  ];
+  $('aim-stats').innerHTML = cells
+    .map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+}
+
+const SENSOR_TEXT = {
+  aus: 'Kompass ist aus. Ohne ihn bleibt Nord oben — dann ist die Rose eine Karte, kein Instrument.',
+  'nicht-verfuegbar': 'Dieses Gerät meldet keine Lagesensoren. Am Rechner ist das normal.',
+  abgelehnt:
+    'Ohne Zugriff auf die Bewegungssensoren geht es nicht. In Safari: aA in der Adresszeile → Website-Einstellungen → Bewegung und Ausrichtung erlauben.',
+  wartet: 'Sensor angemeldet, warte auf die ersten Werte — das Handy einmal bewegen.',
+};
+
+function renderSensorNote() {
+  const c = state.compass;
+  let text = SENSOR_TEXT[c.state];
+  if (c.state === 'laeuft') {
+    if (c.source === 'ios') {
+      text = 'Kompass des Geräts, rechtweisend Nord.';
+      if (c.accuracy != null && c.accuracy > 0) text += ` Angegebene Genauigkeit ±${Math.round(c.accuracy)}°.`;
+      if (c.accuracy != null && c.accuracy < 0) text += ' Der Sensor meldet sich als unkalibriert — Handy einmal als Acht durch die Luft führen.';
+    } else if (c.source === 'absolut') {
+      text =
+        'Magnetkompass des Handys. Er zeigt magnetisch Nord, in Mitteleuropa rund fünf Grad östlich vom wahren Nord — der Feinabgleich unten holt das heraus.';
+    } else {
+      text =
+        'Nur Lagesensor ohne Nordbezug: Drehungen stimmen, die Richtung nicht. Einmal auf die Sonne eichen, danach passt es.';
+    }
+  }
+  $('rose-note').textContent = text || '';
+  $('btn-compass').textContent =
+    c.state === 'laeuft' || c.state === 'wartet' ? 'Kompass ausschalten' : 'Kompass einschalten';
+  $('btn-compass').classList.toggle('active', c.state === 'laeuft');
+  $('cal-note').textContent =
+    state.compassOffset === 0
+      ? 'Noch nicht geeicht.'
+      : `Kompass um ${Math.abs(state.compassOffset).toFixed(1)}° nach ${state.compassOffset > 0 ? 'rechts' : 'links'} gedreht.`;
+}
+
+/**
+ * Eigene Bildschleife für den Peilbereich: die Lagesensoren liefern rund sechzigmal
+ * je Sekunde, der Sekundentakt der übrigen Anzeige wäre dafür viel zu träge. Läuft
+ * nur, solange der Reiter oben ist.
+ */
+function aimLoop() {
+  if (!state.aiming) return;
+  renderAim(modelAt(displayTime(), state.site));
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(aimLoop);
+}
+
+function startAimLoop() {
+  if (state.aiming) return;
+  state.aiming = true;
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(aimLoop);
 }
 
 /* ---------- Foto ---------- */
@@ -667,8 +824,11 @@ function setupTabs() {
     t.onclick = () => {
       tabs.forEach((x) => x.classList.toggle('active', x === t));
       panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === t.dataset.tab));
+      // Die Peilschleife nur laufen lassen, solange man sie auch sieht
+      state.aiming = false;
       resizeAll();
       renderLive();
+      if (t.dataset.tab === 'peilen' && state.compass.state === 'laeuft') startAimLoop();
     };
   });
 }
@@ -677,12 +837,17 @@ function resizeAll() {
   state.chart.resize();
   state.sun.resize();
   state.horizon.resize();
+  state.aim.resize();
+  state.rose.resize();
 }
 
 async function init() {
   state.chart = new Chart($('chart'));
   state.sun = new SunView($('sunview'));
   state.horizon = new HorizonView($('horizonview'));
+  state.aim = new AimView($('aimview'));
+  state.rose = new RoseView($('roseview'));
+  state.compassOffset = loadOffset();
   setupTabs();
   window.addEventListener('resize', () => {
     resizeAll();
@@ -730,6 +895,42 @@ async function init() {
       };
     }
   }
+
+  // Peilen
+  $('btn-compass').onclick = async () => {
+    if (state.compass.state === 'laeuft' || state.compass.state === 'wartet') {
+      state.compass.stop();
+      state.aiming = false;
+    } else {
+      const res = await state.compass.start();
+      if (res === 'wartet') startAimLoop();
+    }
+    renderSensorNote();
+    renderLive();
+  };
+  $('btn-cal-sun').onclick = () => {
+    const frame = compassFrame();
+    if (!frame) {
+      $('cal-note').textContent = 'Dafür muss der Kompass laufen.';
+      return;
+    }
+    const m = modelAt(Date.now(), state.site);
+    if (m.sunAlt < -1) {
+      $('cal-note').textContent = 'Die Sonne ist unter dem Horizont — daran lässt sich nichts eichen.';
+      return;
+    }
+    state.compassOffset += deltaAngle(frame.aim.az, m.sunAz);
+    state.compassOffset = ((state.compassOffset + 180) % 360) - 180;
+    saveOffset(state.compassOffset);
+    renderSensorNote();
+    $('cal-note').textContent += ` Geeicht um ${fmtClock(Date.now())}.`;
+  };
+  $('btn-cal-reset').onclick = () => {
+    state.compassOffset = 0;
+    saveOffset(0);
+    renderSensorNote();
+  };
+  renderSensorNote();
 
   $('btn-measure').onclick = () => (state.measuring ? stopMeasuring() : startMeasuring());
   $('btn-sound').onclick = () => {

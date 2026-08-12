@@ -62,6 +62,7 @@ console.log('\nDateien und Verweise');
     'js/chart.js',
     'js/store.js',
     'js/sky.js',
+    'js/compass.js',
     'js/photo.js',
   ];
   const nichtGecacht = moduleFiles.filter((f) => !assets.includes(f));

@@ -45,6 +45,37 @@ export function compass(azDeg) {
 }
 
 /**
+ * Kleine Sonne mit Mondbiss. Dieselbe Geometrie wie in der Nahaufnahme, nur winzig:
+ * Der Maßstab kommt aus dem Sonnenradius, der Mond sitzt auf dem Versatz aus astro.js.
+ * Wird von der Bahn über dem Horizont und vom Sucher benutzt.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} m Modellzustand aus modelAt
+ * @param {number} px Bildmitte der Sonne
+ * @param {number} py
+ * @param {number} r Radius in Pixeln
+ * @param {number} alpha Deckkraft
+ */
+export function drawEclipsedSun(ctx, m, px, py, r, alpha = 1) {
+  const ppd = r / m.sunRadius;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = m.sunAlt < 0 ? '#8a5a3a' : '#ffd27a';
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(px, py, r + 0.5, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = '#121826';
+  ctx.beginPath();
+  ctx.arc(px + (m.offsetX || 0) * ppd, py - (m.offsetY || 0) * ppd, m.moonRadius * ppd, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
  * Nahaufnahme: Sonnenscheibe, davor der Mond.
  */
 export class SunView {
@@ -290,32 +321,11 @@ export class HorizonView {
     // Sonnenscheibchen entlang der Bahn, damit der Verlauf der Bedeckung sichtbar wird
     const every = Math.max(1, Math.round(path.length / 9));
     for (let i = 0; i < path.length; i += every) {
-      this._miniSun(path[i], x(path[i].sunAz), y(path[i].sunAlt), 6, 0.5);
+      drawEclipsedSun(ctx, path[i], x(path[i].sunAz), y(path[i].sunAlt), 6, 0.5);
     }
 
     if (current) {
-      this._miniSun(current, x(current.sunAz), y(current.sunAlt), 11, 1);
+      drawEclipsedSun(ctx, current, x(current.sunAz), y(current.sunAlt), 11, 1);
     }
-  }
-
-  /** Kleine Sonne mit Mondbiss — dieselbe Geometrie wie in der Nahaufnahme, nur winzig. */
-  _miniSun(m, px, py, r, alpha) {
-    const { ctx } = this;
-    const ppd = r / m.sunRadius;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = m.sunAlt < 0 ? '#8a5a3a' : '#ffd27a';
-    ctx.beginPath();
-    ctx.arc(px, py, r, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(px, py, r + 0.5, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.fillStyle = '#121826';
-    ctx.beginPath();
-    ctx.arc(px + (m.offsetX || 0) * ppd, py - (m.offsetY || 0) * ppd, m.moonRadius * ppd, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
   }
 }

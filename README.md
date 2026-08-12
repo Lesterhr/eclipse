@@ -2,11 +2,15 @@
 
 **Live: https://lesterhr.github.io/eclipse/**
 
-Eine Web-App für den Abend einer Sonnenfinsternis, in drei Teilen:
+Eine Web-App für den Abend einer Sonnenfinsternis, in vier Teilen:
 
 - **Live** zeigt die Sonne so, wie sie gerade aussieht — maßstäbliche Scheiben, der Mond an
   der Stelle, an der er auch am Himmel steht — dazu ihren Weg über den Horizont bis zum
   Untergang. Ein Zeitschieber geht den ganzen Verlauf durch, vorher wie nachher.
+- **Peilen** koppelt die Rechnung an den Lagesensor des Handys. Man hebt es wie eine Kamera,
+  und die Sonne sitzt im Sucherbild dort, wo sie am Himmel steht — mit Horizont, Höhenmarken
+  und dem Untergangspunkt. Daneben eine Rose, die sich mitdreht: oben ist die eigene
+  Blickrichtung.
 - **Messen** protokolliert mit der Handykamera die Umgebungshelligkeit. Während die Sonne
   verschwindet, fällt die eigene Messkurve auf die vorher berechnete Vorhersage. Am Ende
   steht ein Bild, das nur du hast: deine Messung, an deinem Ort, an diesem Abend.
@@ -103,6 +107,32 @@ die Finsternis in den Sonnenuntergang läuft, ist das die Ansicht, die über den
 entscheidet. Steht man erhöht, liegt der sichtbare Horizont um die Kimmtiefe
 (0.0293° · √Höhe in Metern) tiefer; die Linie ist eingezeichnet.
 
+### Die Peilung
+
+`js/compass.js` baut aus alpha/beta/gamma die Rotationsmatrix nach W3C (Z-X'-Y'', intrinsisch).
+Sie bildet Gerätekoordinaten auf die Erdachsen Ost/Nord/Oben ab, und damit fällt alles Weitere
+ab: die Richtung der Rückkamera als Spalte drei, die Bildschirmachsen aus Spalte eins und zwei,
+gedreht um den Winkel der Anzeige, und die Neigung als Höhe der Blickrichtung. Kein Sonderfall
+für Hoch- und Querformat, kein getrennt gerechneter Rollwinkel.
+
+Das Sucherbild ist eine gnomonische Projektion um die Blickrichtung, Bildfeld 60° breit — etwa
+das, was man beim Blick über das Handy hinweg auch wirklich sieht. In dieser Projektion wird
+der Horizont als Großkreis zur Geraden, er lässt sich also aus zwei Punkten ziehen. Die
+Sonnenscheibe ist bewusst übertrieben groß gezeichnet; der dünne Ring um sie hat 5° Halbmesser
+und gibt den Maßstab zurück.
+
+Die Nordrichtung kommt auf drei Wegen, die die Browser unterschiedlich anbieten:
+`webkitCompassHeading` (iOS, rechtweisend Nord, nur nach ausdrücklicher Erlaubnis aus einer
+Berührung heraus), `deviceorientationabsolute` (magnetisch Nord) und als Rest das gewöhnliche
+`deviceorientation` ohne Nordbezug. Die Quellen sind gestuft, eine schlechtere überschreibt
+keine bessere. Geglättet wird über Sinus und Kosinus jedes Winkels, sonst reißt der Sprung von
+359° auf 0° die Rose einmal komplett herum.
+
+Gegen den Rest — Deklination, Eisen in der Nähe, unkalibrierter Magnetometer — steht ein
+Feinabgleich: Sonne im Sucher zentrieren, einmal tippen, fertig. Der Abgleich geht als Abzug
+auf alpha ein. Weil die Alpha-Drehung in der Matrix ganz außen steht, dreht das alle Richtungen
+gleichmäßig um die Senkrechte.
+
 ### Für die Kamera
 
 `js/photo.js` beantwortet drei Fragen, von denen zwei in keiner allgemeinen Tabelle stehen.
@@ -168,11 +198,12 @@ gefüllt sind und keine Leinwand je `NaN` gesehen hat.
 ## Aufbau
 
 ```
-index.html              Oberfläche, vier Reiter: Live, Messen, Foto, Hilfe
+index.html              Oberfläche, fünf Reiter: Live, Peilen, Messen, Foto, Hilfe
 css/style.css           dunkles Thema, dazu ein roter Nachtmodus
 js/astro.js             Ephemeriden (Meeus), Bildlage von Sonne und Mond
 js/eclipse.js           Bedeckung, Kontaktzeiten, Helligkeitsmodell, Sonnenuntergang, Ablaufplan
 js/sky.js               Nahaufnahme der Scheiben und der Weg über den Horizont
+js/compass.js           Lagesensor, Sucherbild, Kompassrose
 js/photo.js             Bildgröße, Bewegungsgrenze, Belichtung, Filterempfehlung
 js/meter.js             Kameramessung, Lichtsensor, Sonifikation
 js/store.js             Messreihe, Persistenz, CSV- und JSON-Export
@@ -194,6 +225,11 @@ tools/make-icons.mjs    erzeugt die PNG-Icons ohne Bildbibliothek
   Rand des Totalitätspfads reagiert sie empfindlich auf das angesetzte Mondradiusverhältnis.
 - Die App ist nicht auf eine bestimmte Finsternis fest verdrahtet: sie sucht über die
   Neumonde der nächsten 400 Tage die nächste am Standort sichtbare.
+- Der Magnetkompass des Handys ist das schwächste Glied der Peilung: Deklination (in
+  Mitteleuropa rund 5° östlich), Eisen in der Nähe und ein unkalibrierter Sensor summieren sich
+  schnell auf zehn Grad. Die App rechnet keine Deklination heraus — ein Weltmagnetfeldmodell
+  wäre mehr Datenballast als die ganze übrige Rechnung. Stattdessen gibt es den Abgleich auf
+  die Sonne, der alle drei Fehler in einem Griff erledigt.
 - Die Belichtungswerte sind Startpunkte für eine Belichtungsreihe, keine Messung. Der
   Extinktionskoeffizient (klar / normal / dunstig) ist einstellbar, weil Dunst am Horizont
   leicht zwei Blenden ausmacht. Nahe dem Horizont ist die Streuung ohnehin am größten.

@@ -25,6 +25,7 @@
 
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="live" role="tab">Live</button>
+      <button class="tab" data-tab="peilen" role="tab">Peilen</button>
       <button class="tab" data-tab="messen" role="tab">Messen</button>
       <button class="tab" data-tab="foto" role="tab">Foto</button>
       <button class="tab" data-tab="hilfe" role="tab">Hilfe</button>
@@ -62,6 +63,57 @@
           <div class="card-head"><h2>Der Ablauf</h2></div>
           <div id="eclipse-info" class="info"></div>
         </section>
+      </section>
+
+      <!-- ============================= PEILEN ============================= -->
+      <section class="panel" data-panel="peilen">
+        <div id="aim-hint" class="hint"></div>
+
+        <button id="btn-compass" class="primary big">Kompass einschalten</button>
+
+        <div class="aimwrap">
+          <canvas id="aimview" height="320"></canvas>
+        </div>
+
+        <div id="aim-stats" class="statgrid"></div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Rose</h2>
+            <span class="muted small-note">oben ist deine Blickrichtung</span>
+          </div>
+          <canvas id="roseview" height="270"></canvas>
+          <p id="rose-note" class="muted note"></p>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Feinabgleich</h2>
+            <span class="muted small-note">gegen den Fehler des Magnetkompasses</span>
+          </div>
+          <p class="muted note">
+            Handykompasse zeigen magnetisch Nord und liegen in Mitteleuropa rund fünf Grad
+            daneben, Autos und Geländer noch mehr. Halt das Handy so, dass die Sonne im Sucher
+            genau in der Mitte sitzt — nach dem Bild, nicht mit dem Blick zur Sonne — und tipp
+            dann auf eichen. Danach stimmt die Richtung auf ein, zwei Grad.
+          </p>
+          <div class="control-row">
+            <button id="btn-cal-sun" class="ghost">auf die Sonne eichen</button>
+            <button id="btn-cal-reset" class="ghost">zurücksetzen</button>
+          </div>
+          <div id="cal-note" class="muted note"></div>
+        </section>
+
+        <details class="card howto">
+          <summary>So peilst du</summary>
+          <ul>
+            <li><strong>Sucher:</strong> Handy hochkant wie eine Kamera halten und drehen, bis die Sonne im Bild in der Mitte steht. Das Bild zeigt Horizont und Höhenmarken alle fünf Grad.</li>
+            <li><strong>Rose:</strong> oben ist immer deine Blickrichtung. Der gelbe Strahl ist die Sonne, der gestrichelte der Untergangspunkt, der breite Bogen der Weg bis dahin.</li>
+            <li><strong>Handy flach hinlegen</strong> macht aus der Rose eine Karte: dann zeigt sie über die Oberkante des Geräts.</li>
+            <li><strong>Ohne Handy nachmessen:</strong> Faust am ausgestreckten Arm sind rund 10°, gespreizte Hand 20°, ein Finger 2°. Damit prüfst du, ob am Platz in dieser Richtung wirklich nichts im Weg steht.</li>
+            <li><strong>Eisen und Strom stören.</strong> Nicht im Auto peilen, nicht am Brückengeländer, und das Handy nicht auf den Autoschlüssel legen.</li>
+          </ul>
+        </details>
       </section>
 
       <!-- ============================= MESSEN ============================= -->
@@ -223,6 +275,7 @@
           </p>
           <ol class="steps">
             <li><strong>Live</strong> zeigt die Sonne so, wie sie gerade aussieht, und wo am Himmel sie steht.</li>
+            <li><strong>Peilen</strong> koppelt das an den Kompass im Handy: du hältst es hoch und siehst, wo die Sonne steht.</li>
             <li><strong>Messen</strong> zeichnet mit der Kamera die Helligkeit auf und legt sie über die Rechnung.</li>
             <li><strong>Foto</strong> rechnet Verschlusszeiten und Bildgröße für die Kamera aus.</li>
           </ol>
