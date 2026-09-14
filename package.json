@@ -1,0 +1,13 @@
+{
+  "name": "finsternis-messung",
+  "version": "2.0.0",
+  "description": "PWA für eine Sonnenfinsternis: zeigt live die bedeckte Sonne, misst den Helligkeitsverlauf mit der Handykamera und rechnet die Kameraeinstellungen für den Ort aus",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "test": "node test/astro.test.mjs && node test/eclipse.test.mjs && node test/photo.test.mjs && node test/compass.test.mjs && node test/wiring.test.mjs && node test/app.smoke.test.mjs"
+  },
+  "license": "MIT"
+}

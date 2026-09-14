@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Finsternis — live, messen, fotografieren</title>
+    <meta name="description" content="Zeigt live, wie weit der Mond die Sonne verdeckt, misst die Finsternis mit der Handykamera und rechnet die Kameraeinstellungen für den Abend aus." />
+    <meta name="theme-color" content="#0d1117" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-main">
+        <h1>Sonnenfinsternis</h1>
+        <button id="btn-site" class="site-chip">
+          <span id="site-name">Standort …</span>
+        </button>
+      </div>
+      <div id="status" class="status">wird geladen …</div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="live" role="tab">Live</button>
+      <button class="tab" data-tab="peilen" role="tab">Peilen</button>
+      <button class="tab" data-tab="messen" role="tab">Messen</button>
+      <button class="tab" data-tab="foto" role="tab">Foto</button>
+      <button class="tab" data-tab="hilfe" role="tab">Hilfe</button>
+    </nav>
+
+    <main>
+      <!-- ============================== LIVE ============================== -->
+      <section class="panel active" data-panel="live">
+        <div id="now-hint" class="hint"></div>
+
+        <div class="sunwrap">
+          <canvas id="sunview" height="300"></canvas>
+        </div>
+
+        <div class="scrubber">
+          <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Zeitpunkt" />
+          <div class="scrub-row">
+            <span id="scrub-label" class="muted">jetzt</span>
+            <button id="btn-now" class="small ghost">zurück auf jetzt</button>
+          </div>
+        </div>
+
+        <div id="live-stats" class="statgrid"></div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Wo am Himmel</h2>
+            <span class="muted small-note">Weg der Sonne bis zum Untergang</span>
+          </div>
+          <canvas id="horizonview" height="180"></canvas>
+          <p id="horizon-note" class="muted note"></p>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Der Ablauf</h2></div>
+          <div id="eclipse-info" class="info"></div>
+        </section>
+      </section>
+
+      <!-- ============================= PEILEN ============================= -->
+      <section class="panel" data-panel="peilen">
+        <div id="aim-hint" class="hint"></div>
+
+        <button id="btn-compass" class="primary big">Kompass einschalten</button>
+
+        <div class="aimwrap">
+          <canvas id="aimview" height="320"></canvas>
+        </div>
+
+        <div id="aim-stats" class="statgrid"></div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Rose</h2>
+            <span class="muted small-note">oben ist deine Blickrichtung</span>
+          </div>
+          <canvas id="roseview" height="270"></canvas>
+          <p id="rose-note" class="muted note"></p>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Feinabgleich</h2>
+            <span class="muted small-note">gegen den Fehler des Magnetkompasses</span>
+          </div>
+          <p class="muted note">
+            Handykompasse zeigen magnetisch Nord und liegen in Mitteleuropa rund fünf Grad
+            daneben, Autos und Geländer noch mehr. Halt das Handy so, dass die Sonne im Sucher
+            genau in der Mitte sitzt — nach dem Bild, nicht mit dem Blick zur Sonne — und tipp
+            dann auf eichen. Danach stimmt die Richtung auf ein, zwei Grad.
+          </p>
+          <div class="control-row">
+            <button id="btn-cal-sun" class="ghost">auf die Sonne eichen</button>
+            <button id="btn-cal-reset" class="ghost">zurücksetzen</button>
+          </div>
+          <div id="cal-note" class="muted note"></div>
+        </section>
+
+        <details class="card howto">
+          <summary>So peilst du</summary>
+          <ul>
+            <li><strong>Sucher:</strong> Handy hochkant wie eine Kamera halten und drehen, bis die Sonne im Bild in der Mitte steht. Das Bild zeigt Horizont und Höhenmarken alle fünf Grad.</li>
+            <li><strong>Das Band unten im Sucher</strong> zeigt den Verlauf der Verdunkelung: links der erste Kontakt, rechts das Ende, die blaue Linie ist jetzt. Gestrichelt das Maximum und, falls die Sonne vorher untergeht, der Untergang — danach läuft die Finsternis weiter, ohne dass noch etwas zu sehen ist.</li>
+            <li><strong>Rose:</strong> oben ist immer deine Blickrichtung. Der gelbe Strahl ist die Sonne, der gestrichelte der Untergangspunkt, der breite Bogen der Weg bis dahin.</li>
+            <li><strong>Handy flach hinlegen</strong> macht aus der Rose eine Karte: dann zeigt sie über die Oberkante des Geräts.</li>
+            <li><strong>Ohne Handy nachmessen:</strong> Faust am ausgestreckten Arm sind rund 10°, gespreizte Hand 20°, ein Finger 2°. Damit prüfst du, ob am Platz in dieser Richtung wirklich nichts im Weg steht.</li>
+            <li><strong>Eisen und Strom stören.</strong> Nicht im Auto peilen, nicht am Brückengeländer, und das Handy nicht auf den Autoschlüssel legen.</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- ============================= MESSEN ============================= -->
+      <section class="panel" data-panel="messen">
+        <p class="lead">
+          Die Kamera schaut nach oben und misst, wie hell es ist. Aus den Messwerten wächst
+          eine Kurve, die genau dann einbricht, wenn der Mond die Sonne verdeckt. Daneben liegt
+          die berechnete Kurve. Passen beide aufeinander, hast du die Finsternis selbst gemessen.
+        </p>
+
+        <div id="resume-bar" class="resume" hidden>
+          <span id="resume-text"></span>
+          <button id="btn-resume" class="small">fortsetzen</button>
+          <button id="btn-discard" class="small ghost">verwerfen</button>
+        </div>
+
+        <button id="btn-measure" class="primary big">Messung starten</button>
+        <p class="muted note">
+          Handy flach hinlegen, Display nach oben, freier Blick zum Himmel. Vor 19:20 starten
+          und danach nicht mehr anfassen.
+        </p>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Lichtkurve</h2>
+            <button id="btn-mode" class="small ghost">Helligkeit</button>
+          </div>
+          <canvas id="chart" height="260"></canvas>
+          <div class="legend">
+            <span class="dot measured"></span> deine Messung
+            <span class="dot model"></span> berechnet
+          </div>
+          <div id="measure-readout" class="statgrid"></div>
+          <div id="meter-status" class="meter-status"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Einstellungen</h2></div>
+          <div class="control-row">
+            <label>
+              Takt
+              <select id="interval">
+                <option value="2">alle 2 s</option>
+                <option value="5" selected>alle 5 s</option>
+                <option value="10">alle 10 s</option>
+                <option value="30">alle 30 s</option>
+              </select>
+            </label>
+            <label>
+              Kamera
+              <select id="camera-select">
+                <option value="user" selected>vorne</option>
+                <option value="environment">hinten</option>
+              </select>
+            </label>
+          </div>
+          <div class="control-row">
+            <button id="btn-sound" class="ghost">Ton an</button>
+            <button id="btn-night" class="ghost">Rotlicht</button>
+            <button id="btn-mark" class="ghost">Wolke notieren</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Ergebnis mitnehmen</h2></div>
+          <div class="control-row">
+            <button id="btn-share" class="ghost">Bild teilen</button>
+            <button id="btn-csv" class="ghost">CSV</button>
+            <button id="btn-json" class="ghost">JSON</button>
+          </div>
+        </section>
+      </section>
+
+      <!-- ============================== FOTO ============================== -->
+      <section class="panel" data-panel="foto">
+        <div class="hint danger">
+          <strong>Nie ungefiltert in die Sonne schauen</strong> — weder mit dem Auge noch durch
+          Sucher, Fernglas oder Teleobjektiv. Ein Teleobjektiv ohne Filter zerstört in Sekunden
+          den Verschluss und die Netzhaut. Filter gehört <em>vor</em> die Frontlinse, nie dahinter.
+        </div>
+
+        <div id="photo-live" class="hint"></div>
+
+        <section class="card">
+          <div class="card-head"><h2>Deine Ausrüstung</h2></div>
+          <div class="control-row">
+            <label>
+              Brennweite
+              <input id="ph-focal" type="number" value="300" min="8" max="3000" step="10" /> mm
+            </label>
+            <label>
+              Sensor
+              <select id="ph-sensor">
+                <option value="ff">Vollformat</option>
+                <option value="apsc" selected>APS-C</option>
+                <option value="apscCanon">APS-C Canon</option>
+                <option value="mft">MFT</option>
+                <option value="type1">1 Zoll</option>
+              </select>
+            </label>
+          </div>
+          <div class="control-row">
+            <label>
+              Breite
+              <input id="ph-pixels" type="number" value="6000" min="1000" max="20000" step="100" /> px
+            </label>
+            <label>
+              Blende f/
+              <input id="ph-aperture" type="number" value="8" min="1" max="32" step="0.1" />
+            </label>
+            <label>
+              ISO
+              <input id="ph-iso" type="number" value="100" min="50" max="25600" step="50" />
+            </label>
+          </div>
+          <div class="control-row">
+            <label>
+              Luft
+              <select id="ph-haze">
+                <option value="0.2">klar</option>
+                <option value="0.3" selected>normal</option>
+                <option value="0.45">dunstig</option>
+              </select>
+            </label>
+          </div>
+          <div id="ph-gear" class="statgrid"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Zeiten und Einstellungen</h2>
+            <span class="muted small-note">Startwerte, immer Reihe fahren</span>
+          </div>
+          <div id="ph-table" class="table-wrap"></div>
+        </section>
+
+        <details class="card howto">
+          <summary>Worauf es sonst ankommt</summary>
+          <ul>
+            <li><strong>Manuell alles.</strong> M-Modus, manueller Fokus, fester Weißabgleich (Tageslicht, ca. 5500 K). Autofokus findet auf der gefilterten Sonne nichts.</li>
+            <li><strong>Fokus auf den Sonnenrand</strong>, in der Lupenansicht des Live-View, und danach nicht mehr anfassen. Unendlich am Ring ist nicht scharf.</li>
+            <li><strong>RAW.</strong> Der Spielraum bei tief stehender Sonne ist der halbe Erfolg.</li>
+            <li><strong>Spiegelvorauslösung, Fernauslöser oder Selbstauslöser.</strong> Bei langer Brennweite ruiniert der Finger am Auslöser mehr Bilder als der Wind.</li>
+            <li><strong>Der Bedeckungsgrad ändert die Belichtung nicht.</strong> Die verbleibende Sichel ist genauso hell wie die volle Sonne. Was die Zeiten wirklich verlängert, ist die sinkende Sonne.</li>
+            <li><strong>Zweite Kamera für die Landschaft.</strong> Weitwinkel, normal belichtet, alle paar Minuten ein Bild. Der Farbwechsel im Licht ist am Ende oft das bessere Bild.</li>
+            <li><strong>Serie fürs Kompositbild:</strong> alle fünf Minuten eine Aufnahme, Kamera nicht verstellen, hinterher übereinanderlegen.</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- ============================== HILFE ============================== -->
+      <section class="panel" data-panel="hilfe">
+        <section class="card">
+          <div class="card-head"><h2>Was diese Seite macht</h2></div>
+          <p class="lead">
+            Sie rechnet für deinen Standort aus, wann und wie stark der Mond die Sonne verdeckt,
+            zeigt das laufend als Bild, und sie kann die Finsternis mit der Handykamera messen.
+            Alles rechnet das Handy selbst, ohne Internet.
+          </p>
+          <ol class="steps">
+            <li><strong>Live</strong> zeigt die Sonne so, wie sie gerade aussieht, und wo am Himmel sie steht.</li>
+            <li><strong>Peilen</strong> koppelt das an den Kompass im Handy: du hältst es hoch und siehst, wo die Sonne steht.</li>
+            <li><strong>Messen</strong> zeichnet mit der Kamera die Helligkeit auf und legt sie über die Rechnung.</li>
+            <li><strong>Foto</strong> rechnet Verschlusszeiten und Bildgröße für die Kamera aus.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Sicherheit</h2></div>
+          <p>
+            Auch bei 90 % bedeckter Sonne ist der Rest hell genug, um die Netzhaut zu verbrennen,
+            ohne dass es weh tut. Für den Blick nach oben braucht es eine Finsternisbrille nach
+            EN&nbsp;ISO&nbsp;12312-2. Sonnenbrille, geschwärztes Glas, Rettungsdecke, CD, belichteter
+            Film: alles ungeeignet. Durch Fernglas oder Teleobjektiv gilt das erst recht — dort
+            reicht ein Sekundenbruchteil.
+          </p>
+          <p>
+            Ohne Brille geht es trotzdem: ein Blatt Papier mit einem Nadelloch wirft das Bild der
+            Sichel auf ein zweites Blatt. Unter Bäumen macht jede Blattlücke dasselbe, hunderte
+            kleine Sicheln auf dem Boden.
+          </p>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>So misst du sauber</h2></div>
+          <ol class="steps">
+            <li>Handy <strong>flach hinlegen, Display nach oben</strong>, freier Blick zum Himmel. Nicht in den Schatten und nicht auf die Sonne richten.</li>
+            <li>Vor dem ersten Kontakt starten. Die App braucht ein Stück unbedeckte Kurve, um die Messung zu eichen.</li>
+            <li>Ab dann <strong>nichts mehr bewegen</strong>. Jede Lageänderung ist ein Sprung in den Daten.</li>
+            <li>Automatische Displayhelligkeit und Nachtmodus am Handy ausschalten.</li>
+            <li>Zieht eine Wolke durch, auf „Wolke notieren“ tippen. Dann weißt du später, welcher Knick von wem stammt.</li>
+          </ol>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Standort</h2></div>
+          <p class="muted">
+            Alle Zeiten hängen am Ort. Ein paar Kilometer verschieben die Kontakte um Minuten
+            und den Bedeckungsgrad um Zehntel. Oben rechts lässt sich der Ort setzen: per GPS,
+            über die Suche oder von Hand.
+          </p>
+          <p class="muted">
+            Stehst du erhöht, trag die Höhe über dem Umland ein. Von einem Turm sieht man weiter
+            über die Erdkrümmung hinweg, die Sonne geht später unter — bei einer Finsternis, die
+            in den Untergang läuft, sind das die entscheidenden Minuten.
+          </p>
+        </section>
+
+        <footer>
+          <span class="muted">
+            Sonnen- und Mondpositionen nach Meeus, <em>Astronomical Algorithms</em>, topozentrisch
+            für deinen Ort. Randverdunklung quadratisch. Die Helligkeitsrechnung ist genähert:
+            die Form der Kurve stimmt, die absolute Skala wird an die Messung angepasst.
+            Belichtungswerte sind Startpunkte, kein Ersatz für eine Belichtungsreihe.
+          </span>
+        </footer>
+      </section>
+    </main>
+
+    <!-- ============================ STANDORT ============================ -->
+    <div id="site-sheet" class="sheet" hidden>
+      <div class="sheet-inner">
+        <div class="card-head">
+          <h2>Standort</h2>
+          <button id="btn-site-close" class="small ghost">fertig</button>
+        </div>
+
+        <button id="btn-site-gps" class="ghost wide">Aktuellen Standort per GPS holen</button>
+
+        <div class="control-row">
+          <input id="site-search" type="search" placeholder="Ort suchen, z. B. Buchbergwarte" />
+          <button id="btn-site-search" class="small">suchen</button>
+        </div>
+        <div id="site-results" class="results"></div>
+
+        <div class="control-row">
+          <label>Breite <input id="in-lat" type="number" step="0.0001" /></label>
+          <label>Länge <input id="in-lon" type="number" step="0.0001" /></label>
+        </div>
+        <div class="control-row">
+          <label>Seehöhe <input id="in-height" type="number" step="1" /> m</label>
+          <label>über Umland <input id="in-above" type="number" step="1" /> m</label>
+        </div>
+        <button id="btn-site-save" class="primary wide">Übernehmen</button>
+
+        <div id="site-presets" class="results"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
